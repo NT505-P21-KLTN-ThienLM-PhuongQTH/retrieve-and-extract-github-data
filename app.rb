@@ -1,8 +1,12 @@
-require_relative "./app/config/environment"
-require_relative "./app/controllers/repo_controller"
+#!/usr/bin/env ruby
+require 'sinatra'
+require_relative 'app/config/environment'
 
-class Application < App::Base
-  use RepoController
+# Cấu hình Sinatra
+set :port, 4567
+set :bind, '0.0.0.0' # Cho phép truy cập từ ngoài nếu cần
+
+# Route cơ bản để kiểm tra server
+get '/' do
+  'GHTorrent Backend is running!'
 end
-
-Application.run! if $PROGRAM_NAME == __FILE__

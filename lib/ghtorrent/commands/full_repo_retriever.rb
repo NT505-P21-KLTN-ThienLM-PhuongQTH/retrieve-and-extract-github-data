@@ -15,7 +15,7 @@ module GHTorrent
       end
 
       def settings
-        raise('Unimplemented')
+        super # Base on the settings from the parent class
       end
 
       def options

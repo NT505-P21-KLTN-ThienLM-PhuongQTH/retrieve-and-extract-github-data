@@ -2,9 +2,13 @@ require 'rubygems'
 require 'optimist'
 require 'bunny'
 require 'etc'
+require 'yaml'
+require 'dotenv'
+require 'erb'
 
 require_relative './settings'
 require_relative '../version'
+require_relative './logging'
 
 module GHTorrent
 
@@ -35,32 +39,7 @@ module GHTorrent
         command.process_options
         command.validate
 
-        command.settings = YAML::load_file command.options[:config]
-
-        unless command.options[:addr].nil?
-          command.settings = command.override_config(command.settings,
-                                                     :attach_ip,
-                                                     command.options[:addr])
-        end
-
-        unless command.options[:token].nil?
-          command.settings = command.override_config(command.settings,
-                                                     :github_token,
-                                                     command.options[:token])
-        end
-
-        unless command.options[:req_limit].nil?
-          command.settings = command.override_config(command.settings,
-                                                     :req_limit,
-                                                     command.options[:req_limit])
-        end
-
-        unless command.options[:uniq].nil?
-          command.settings = command.override_config(command.settings,
-                                                     :logging_uniq,
-                                                     command.options[:uniq])
-        end
-
+        command.settings = command.parse_config
 
         begin
           command.go
@@ -136,6 +115,29 @@ Standard options:
             Optimist::die "No such user: #{@options[:user]}"
           end
       end
+    end
+
+    def parse_config
+      config_file = @options[:config]
+
+      # Load .env từ thư mục chứa config file
+      Dotenv.load(File.join(File.dirname(config_file), '.env'))
+
+      # Đọc và xử lý ERB, sau đó parse YAML
+      erb_template = File.read(config_file)
+      yaml_content = ERB.new(erb_template).result
+      config = YAML.load(yaml_content)
+      unless config.is_a?(Hash)
+        raise "Invalid config.yaml.erb: Expected a hash, got #{config.class}"
+      end
+
+      # Ghi đè từ tùy chọn dòng lệnh
+      config = override_config(config, :attach_ip, @options[:addr]) unless @options[:addr].nil?
+      config = override_config(config, :github_token, @options[:token]) unless @options[:token].nil?
+      config = override_config(config, :req_limit, @options[:req_limit]) unless @options[:req_limit].nil?
+      config = override_config(config, :logging_uniq, @options[:uniq]) unless @options[:uniq].nil?
+
+      config
     end
 
     # Name of the command that is currently being executed.
