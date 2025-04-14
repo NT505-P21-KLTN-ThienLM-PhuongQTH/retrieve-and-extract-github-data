@@ -1,0 +1,5 @@
+Metrics/ModuleLength:
+  Max: 1000  # Increase limit for module length
+
+Style/Documentation:
+  Enabled: false  # Disable warnings for missing documentation comments

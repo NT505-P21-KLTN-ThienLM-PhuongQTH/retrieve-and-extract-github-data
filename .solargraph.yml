@@ -1,0 +1,12 @@
+# Enable diagnostics to show errors and warnings
+diagnostics:
+  enabled: true
+
+# Enable code completion and suggestions
+completion:
+  enabled: true
+
+# Enable formatting
+editor:
+  formatting:
+    enabled: true
