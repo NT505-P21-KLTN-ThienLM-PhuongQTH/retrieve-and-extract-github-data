@@ -26,7 +26,10 @@ require_relative 'go'
 require_relative 'java'
 require_relative 'ruby'
 require_relative 'python'
-
+require_relative 'javascript'
+require_relative 'typescript'
+require_relative 'cpp'
+require_relative 'csharp'
 
 class GhtorrentExtractor
 
@@ -263,16 +266,25 @@ usage:
     language = repo_entry[:language].downcase
 
     case language
-      when /ruby/i then
-        self.extend(RubyData)
-      when /java/i then
-        self.extend(JavaData)
-      when /python/i then
-        self.extend(PythonData)
-      when /go/i then
-        self.extend(GoData)
-      else
-        Optimist::die "Language #{language} not supported"
+    when /javascript/i
+      self.extend(JavaScriptData)
+    when /typescript/i
+      self.extend(TypeScriptData)
+    when /c\+\+/i
+      self.extend(CppData)
+    when /c#/i
+      self.extend(CSharpData)
+    when /go/i
+      self.extend(GoData)
+    when /java/i
+      self.extend(JavaData)
+    when /python/i
+      self.extend(PythonData)
+    when /ruby/i
+      self.extend(RubyData)
+    else
+      log "Language #{language} not supported, defaulting to JavaScript"
+      self.extend(JavaScriptData)
     end
 
     # Update the repo
@@ -353,6 +365,18 @@ usage:
 
   # Process a single build
   def process_commit(sha, owner, repo, lang, repo_id)
+    include_module = case lang.downcase
+                      when 'javascript' then JavaScriptData
+                      when 'typescript' then TypeScriptData
+                      when 'c++' then CppData
+                      when 'c#' then CSharpData
+                      when 'go' then GoData
+                      when 'java' then JavaData
+                      when 'python' then PythonData
+                      when 'ruby' then RubyData
+                      else JavaScriptData
+                      end
+    extend include_module
     commit = mongo&.[]('commits')&.find({ 'sha' => sha }).limit(1).first
     # return nil if commit.nil? || commit.empty?
     log "Commit for SHA #{sha}: #{commit.inspect}"
@@ -493,7 +517,7 @@ usage:
         # [doc] Number of commits in the repository
         :gh_repo_num_commits => confounds[:repo_num_commits]
     }
-    log "Processed commit #{sha}: src_churn=#{result[:git_diff_src_churn]}, sloc=#{result[:gh_sloc]}, num_commits=#{result[:gh_repo_num_commits]}", 1, :commit
+    log "Processed commit #{sha}: src_churn=#{result[:git_diff_src_churn]}, src_files=#{result[:gh_diff_src_files]}, sloc=#{result[:gh_sloc]}, num_commits=#{result[:gh_repo_num_commits]}", 1, :commit
     result
   end
 
@@ -639,7 +663,7 @@ usage:
       lang = Linguist::Language.find_by_filename(f)
       type = if lang.empty?
                extension = File.extname(f).downcase
-               programming_extensions = ['.js', '.jsx', '.ts', '.tsx']
+               programming_extensions = ['.js', '.jsx', '.ts', '.tsx', '.cpp', '.cxx', '.cc', '.h', '.hpp', '.cs']
                programming_extensions.include?(extension) ? :programming : :data
              else
                lang[0].type
