@@ -18,6 +18,10 @@ require 'net/http'
 require 'fileutils'
 require 'time_difference'
 
+require 'erb'
+require 'dotenv'
+require_relative "../../csv_helper"
+
 require_relative 'go'
 require_relative 'java'
 require_relative 'ruby'
@@ -42,7 +46,7 @@ class GhtorrentExtractor
       command.process_options
       command.validate
 
-      command.config = YAML::load_file command.options[:config]
+      command.config = command.parse_config
       command.go
     end
   end
@@ -75,14 +79,18 @@ usage:
 #{File.basename($0)} owner repo token
 
       BANNER
-      opt :config, 'config.yaml file location', :short => 'c',
-          :default => 'config.yaml'
+      # opt :config, 'config.yaml file location', :short => 'c',
+      #     :default => 'config.yaml'
+      opt :config, 'config.yaml.erb file location', short: 'c',
+          default: File.expand_path('../../../../config.yaml.erb', __FILE__)
+      opt :output, 'Output CSV file location', short: 'o',
+          default: 'extracted_data.csv'
     end
   end
 
   def validate
     if options[:config].nil?
-      unless file_exists?("config.yaml")
+      unless File.exist?(File.expand_path('../../../config.yaml.erb', __FILE__))
         Optimist::die "No config file in default location (#{Dir.pwd}). You
                         need to specify the #{:config} parameter."
       end
@@ -92,6 +100,18 @@ usage:
     end
 
     Optimist::die 'Three arguments required' unless !args[1].nil?
+  end
+
+  def parse_config
+    config_file = @options[:config]
+    Dotenv.load(File.join(File.dirname(config_file), 'config', '.env'))
+    erb_template = File.read(config_file)
+    yaml_content = ERB.new(erb_template).result
+    config = YAML.load(yaml_content)
+    unless config.is_a?(Hash)
+      raise "Invalid config.yaml.erb: Expected a hash, got #{config.class}"
+    end
+    config
   end
 
   def db
@@ -191,10 +211,12 @@ usage:
     end
   end
 
-  def log(msg, level = 0)
+  def log(msg, level = 0, type = :general)
+    max_length = 1000
+    msg = msg.to_s[0...max_length] + '...' if msg.to_s.length > max_length
     semaphore.synchronize do
-      (0..level).each { STDERR.write ' ' }
-      STDERR.puts msg
+      (0..level).each { STDERR.print ' ' }
+      STDERR.puts "[#{type.upcase}] #{msg}"
     end
   end
 
@@ -276,8 +298,10 @@ usage:
     if results.empty?
       log "No data extracted!"
     else
-      puts results.first.keys.map(&:to_s).join(',')
-      results.each { |r| puts r.values.join(',') }
+      # puts results.first.keys.map(&:to_s).join(',')
+      # results.each { |r| puts r.values.join(',') }
+      File.write(@options[:output], array_of_hashes_to_csv(results.map { |r| r.transform_keys(&:to_s) }))
+      log "Results written to #{@options[:output]}"
     end
 
   end
@@ -290,30 +314,35 @@ usage:
     rescue => e
       log "Exception on time difference processing commit #{tigger_commit}: #{e.message}"
       log e.backtrace
+      age = 0
     ensure
       return age
     end
   end
 
-  def calculate_number_of_commits(walker)
-    begin
-      num_commits = walker.count
-    rescue => e
-      log "Exception on commit numbers processing commit #{tigger_commit}: #{e.message}"
-      log e.backtrace
-    ensure
-      return num_commits
-    end
-  end
-
-  def calculate_confounds(trigger_comit)
+  def calculate_number_of_commits(trigger_commit)
     begin
       walker = Rugged::Walker.new(git)
       walker.sorting(Rugged::SORT_TOPO | Rugged::SORT_DATE | Rugged::SORT_REVERSE)
-      walker.push(trigger_comit)
+      walker.push(trigger_commit)
+      num_commits = walker.count
+      num_commits = 1 if num_commits.zero?
+    rescue => e
+      log "Exception on commit numbers processing commit #{tigger_commit}: #{e.message}"
+      log e.backtrace
+      num_commits = 1
+    end
+    num_commits
+  end
 
-      age = calculate_time_difference(walker, trigger_comit)
-      num_commits = calculate_number_of_commits walker
+  def calculate_confounds(trigger_commit)
+    begin
+      walker = Rugged::Walker.new(git)
+      walker.sorting(Rugged::SORT_TOPO | Rugged::SORT_DATE | Rugged::SORT_REVERSE)
+      walker.push(trigger_commit)
+
+      age = calculate_time_difference(walker, trigger_commit)
+      num_commits = calculate_number_of_commits(trigger_commit)
     ensure
       return {
           :repo_age => age,
@@ -341,17 +370,25 @@ usage:
 
     # Count number of src/comment lines
     sloc = src_lines(sha)
+    log "Computed sloc for #{sha}: #{sloc}", 1, :commit
     months_back = 3
 
     branches = git.branches.each_name(:local).select { |b| git.branches[b].target_id == sha }
     branch = branches.first
+    unless branch
+      begin
+        branch = `git -C #{File.join('repos', owner, repo)} rev-parse --abbrev-ref HEAD`.strip
+      rescue
+        branch = 'unknown'
+      end
+    end
     stats = calc_build_stats(owner, repo, [sha])
     confounds = calculate_confounds(sha)
     pr_info = pr_info_for_commit(sha, repo_id)
 
-    {
+    result = {
         # [doc] The branch that was built
-        :git_branch => commit.dig('commit', 'branch'),
+        :git_branch => branch || commit.dig('commit', 'branch'),
 
         # [doc] A list of all commits that were built for this build, up to but excluding the commit of the previous
         # build, or up to and including a merge commit (in which case we cannot go further backward).
@@ -372,10 +409,10 @@ usage:
         :git_diff_committers => commit.dig('commit', 'author', 'email'),
 
         # [doc] Number of lines of production code changed in all `git_all_built_commits`.
-        :git_diff_src_churn => stats[:lines_added] + stats[:lines_deleted],
+        :git_diff_src_churn => stats[:lines_added].to_i + stats[:lines_deleted].to_i,
 
         # [doc] Number of lines of test code changed in all `git_all_built_commits`.
-        :git_diff_test_churn => stats[:test_lines_added] + stats[:test_lines_deleted],
+        :git_diff_test_churn => stats[:test_lines_added].to_i + stats[:test_lines_deleted].to_i,
 
         # [doc] Project name on GitHub.
         :gh_project_name => "#{owner}/#{repo}",
@@ -456,7 +493,8 @@ usage:
         # [doc] Number of commits in the repository
         :gh_repo_num_commits => confounds[:repo_num_commits]
     }
-
+    log "Processed commit #{sha}: src_churn=#{result[:git_diff_src_churn]}, sloc=#{result[:gh_sloc]}, num_commits=#{result[:gh_repo_num_commits]}", 1, :commit
+    result
   end
 
   def pr_info_for_commit(sha, repo_id)
@@ -510,19 +548,18 @@ usage:
 
   def pushed_at(sha, commit)
     if mongo
-      push_event = mongo['events'].find(
+      event = mongo['events'].find(
         {
           'repo.name' => "#{owner}/#{repo}",
-          'type' => 'PushEvent',
+          'type' => { '$in' => ['PushEvent', 'CreateEvent'] },
           'payload.commits.sha' => sha
         },
         sort: { 'created_at' => 1 },
         limit: 1
       ).first
-      push_event&.dig('created_at')
-    else
-      commit.dig('commit', 'committer', 'date') || git.lookup(sha).committer[:time].to_s
+      return event&.dig('created_at') if event
     end
+    commit.dig('commit', 'committer', 'date') || git.lookup(sha).committer[:time].to_s
   end
 
   def commit_fallback(sha)
@@ -580,94 +617,85 @@ usage:
   def calc_build_stats(owner, repo, commits)
     raw_commits = commit_entries(owner, repo, commits)
     result = Hash.new(0)
-
+    file_types = {} # Cache kết quả phân loại
+  
     def file_count(commits, status)
       commits.map do |c|
-        c['files'].reduce(Array.new) do |acc, y|
-          if y['status'] == status then
-            acc << y['filename']
-          else
-            acc
-          end
+        c['files'].reduce([]) do |acc, y|
+          acc << y['filename'] if y['status'] == status
+          acc
         end
       end.flatten.uniq.size
     end
-
+  
     def files_touched(commits)
       commits.map do |c|
-        c['files'].map do |y|
-          y['filename']
-        end
+        c['files'].map { |y| y['filename'] }
       end.flatten.uniq.size
     end
-
-    def file_type(f)
+  
+    def file_type(f, file_types)
+      return file_types[f] if file_types.key?(f)
       lang = Linguist::Language.find_by_filename(f)
-      if lang.empty? then
-        :data
-      else
-        lang[0].type
-      end
+      type = if lang.empty?
+               extension = File.extname(f).downcase
+               programming_extensions = ['.js', '.jsx', '.ts', '.tsx']
+               programming_extensions.include?(extension) ? :programming : :data
+             else
+               lang[0].type
+             end
+      log "File #{f} classified as #{type}#{lang.empty? ? ' (fallback based on extension)' : " (language: #{lang[0].name})"}", 1, :file
+      file_types[f] = type
+      type
     end
-
-    def file_type_count(commits, type)
+  
+    def file_type_count(commits, type, file_types)
       commits.map do |c|
-        c['files'].reduce(Array.new) do |acc, y|
-          if file_type(y['filename']) == type then
-            acc << y['filename']
-          else
-            acc
-          end
+        log "Files in commit: #{c['files'].map { |y| y['filename'] }.join(', ')}", 1, :file
+        c['files'].reduce([]) do |acc, y|
+          acc << y['filename'] if file_type(y['filename'], file_types) == type
+          acc
         end
       end.flatten.uniq.size
     end
-
-    def lines(commit, type, action)
+  
+    def lines(commit, type, action, file_types)
       commit['files'].select do |x|
-        next unless file_type(x['filename']) == :programming
-
+        next unless file_type(x['filename'], file_types) == :programming
         case type
-          when :test
-            true if test_file_filter.call(x['filename'])
-          when :src
-            true unless test_file_filter.call(x['filename'])
-          else
-            false
+        when :test
+          test_file_filter.call(x['filename'])
+        when :src
+          !test_file_filter.call(x['filename'])
+        else
+          false
         end
       end.reduce(0) do |acc, y|
-        diff_start = case action
-                       when :added
-                         "+"
-                       when :deleted
-                         "-"
-                     end
-
-        acc += unless y['patch'].nil?
-                 y['patch'].lines.select { |x| x.start_with?(diff_start) }.size
-               else
-                 0
-               end
-        acc
+        diff_start = action == :added ? "+" : "-"
+        count = y['patch']&.lines&.select { |x| x.start_with?(diff_start) }&.size || 0
+        log "Calculating #{action} lines for #{y['filename']}: #{count}", 2, :file unless y['filename'].match?(/\.json$|\.lock$/)
+        acc + count
       end
     end
-
+  
     raw_commits.each do |x|
       next if x.nil?
-      result[:lines_added] += lines(x, :src, :added)
-      result[:lines_deleted] += lines(x, :src, :deleted)
-      result[:test_lines_added] += lines(x, :test, :added)
-      result[:test_lines_deleted] += lines(x, :test, :deleted)
+      log "Processing commit #{x['sha']}, files: #{x['files']&.map { |f| f['filename'] }&.join(', ') || 'none'}", 0, :commit
+      result[:lines_added] += lines(x, :src, :added, file_types)
+      result[:lines_deleted] += lines(x, :src, :deleted, file_types)
+      result[:test_lines_added] += lines(x, :test, :added, file_types)
+      result[:test_lines_deleted] += lines(x, :test, :deleted, file_types)
     end
-
-    result[:files_added] += file_count(raw_commits, "added")
-    result[:files_removed] += file_count(raw_commits, "removed")
-    result[:files_modified] += file_count(raw_commits, "modified")
-    result[:files_touched] += files_touched(raw_commits)
-
-    result[:src_files] += file_type_count(raw_commits, :programming)
-    result[:doc_files] += file_type_count(raw_commits, :markup)
-    result[:other_files] += file_type_count(raw_commits, :data)
-
+  
+    result[:files_added] = file_count(raw_commits, "added")
+    result[:files_removed] = file_count(raw_commits, "removed")
+    result[:files_modified] = file_count(raw_commits, "modified")
+    result[:files_touched] = files_touched(raw_commits)
+    result[:src_files] = file_type_count(raw_commits, :programming, file_types)
+    result[:doc_files] = file_type_count(raw_commits, :markup, file_types)
+    result[:other_files] = file_type_count(raw_commits, :data, file_types)
+  
+    log "Build stats for #{commits.join(', ')}: #{result.inspect}", 1, :commit
     result
   end
 
@@ -717,27 +745,28 @@ usage:
   # between the time the build was created and `months_back`
   def commits_on_files_touched(owner, repo, sha, months_back)
     commit = git.lookup(sha)
-  oldest = Time.at(commit.time.to_i - 3600 * 24 * 30 * months_back)
-  
-  # Get the diff for the commit
-  diff = commit.diff
-  files = []
-  diff.each_patch do |patch|
-    files << patch.delta.old_file[:path] # Old file
-    files << patch.delta.new_file[:path] # New file (if renamed/moved)
-  end
-  files.uniq! # Remove duplicates
-  
-  # Search for commits in the repository that modified the files
-  walker = Rugged::Walker.new(git)
-  walker.sorting(Rugged::SORT_DATE)
-  walker.push(sha)
-  walker.take_while { |c| c.time > oldest }
-        .select { |c| c.diff(paths: files).size > 0 }
-        .map(&:oid)
-        .uniq
-        .size
-  end
+    oldest = Time.at(commit.time.to_i - 3600 * 24 * 30 * months_back)
+    
+    # Get the diff for the commit
+    diff = commit.diff
+    files = []
+    diff.each_patch do |patch|
+      files << patch.delta.old_file[:path] # Old file
+      files << patch.delta.new_file[:path] # New file (if renamed/moved)
+    end
+    files.uniq! # Remove duplicates
+    log "Files touched in #{sha}: #{files.join(', ')}"
+    
+    # Search for commits in the repository that modified the files
+    walker = Rugged::Walker.new(git)
+    walker.sorting(Rugged::SORT_DATE)
+    walker.push(sha)
+    walker.take_while { |c| c.time > oldest }
+          .select { |c| c.diff(paths: files).size > 0 }
+          .map(&:oid)
+          .uniq
+          .size
+    end
 
   def github_login(email)
     q = <<-QUERY

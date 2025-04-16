@@ -1,0 +1,5 @@
+require 'travistorrent/ghtorrent_extractor/ghtorrent_extractor'
+require 'travistorrent/ghtorrent_extractor/go'
+require 'travistorrent/ghtorrent_extractor/java'
+require 'travistorrent/ghtorrent_extractor/python'
+require 'travistorrent/ghtorrent_extractor/ruby'

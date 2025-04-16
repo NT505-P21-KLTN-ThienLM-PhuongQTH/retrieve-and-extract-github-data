@@ -10,8 +10,21 @@ PATH
 GEM
   remote: https://rubygems.org/
   specs:
+    activesupport (7.2.2.1)
+      base64
+      benchmark (>= 0.3)
+      bigdecimal
+      concurrent-ruby (~> 1.0, >= 1.3.1)
+      connection_pool (>= 2.2.5)
+      drb
+      i18n (>= 1.6, < 2)
+      logger (>= 1.4.2)
+      minitest (>= 5.1)
+      securerandom (>= 0.3)
+      tzinfo (~> 2.0, >= 2.0.5)
     amq-protocol (2.3.3)
     base64 (0.2.0)
+    benchmark (0.4.0)
     bigdecimal (3.1.9)
     bson (4.15.0)
     bunny (2.22.0)
@@ -19,10 +32,13 @@ GEM
       sorted_set (~> 1, >= 1.0.2)
     cgi (0.4.2)
     charlock_holmes (0.7.9)
+    concurrent-ruby (1.3.5)
+    connection_pool (2.5.0)
     csv (3.3.4)
     daemons (1.4.1)
     digest (3.1.1)
     dotenv (3.1.8)
+    drb (2.2.1)
     etc (1.4.5)
     eventmachine (1.2.7)
     fileutils (1.7.3)
@@ -35,9 +51,12 @@ GEM
       csv
       mini_mime (>= 1.0.0)
       multi_xml (>= 0.5.2)
+    i18n (1.14.7)
+      concurrent-ruby (~> 1.0)
     json (2.7.6)
     logger (1.6.6)
     mini_mime (1.1.5)
+    minitest (5.25.5)
     mongo (2.21.0)
       bson (>= 4.14.1, < 6.0.0)
     multi_json (1.15.0)
@@ -57,6 +76,7 @@ GEM
     rbtree (0.4.6)
     ruby2_keywords (0.0.5)
     rugged (1.7.2)
+    securerandom (0.4.1)
     sequel (5.76.0)
       bigdecimal
     set (1.1.1)
@@ -79,8 +99,12 @@ GEM
       eventmachine (~> 1.0, >= 1.0.4)
       rack (>= 1, < 3)
     tilt (2.6.0)
+    time_difference (0.5.0)
+      activesupport
     tmpdir (0.2.0)
       fileutils
+    tzinfo (2.0.6)
+      concurrent-ruby (~> 1.0)
     uri (0.13.2)
     yaml (0.3.0)
 
@@ -111,6 +135,7 @@ DEPENDENCIES
   sinatra
   sinatra-contrib
   thin (~> 1.8.2)
+  time_difference (~> 0.5.0)
   tmpdir (~> 0.2.0)
   uri (~> 0.13.0)
   yaml (~> 0.3.0)
