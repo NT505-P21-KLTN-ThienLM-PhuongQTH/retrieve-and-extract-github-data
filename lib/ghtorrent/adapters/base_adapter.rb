@@ -3,7 +3,7 @@ module GHTorrent
     ENTITIES = %i[users commits followers repos events org_members
                   commit_comments repo_collaborators watchers pull_requests
                   forks pull_request_comments issue_comments issues issue_events
-                  repo_labels geo_cache pull_request_commits topics].sort
+                  repo_labels geo_cache pull_request_commits topics workflows workflow_runs].sort
 
     # Stores +data+ into +entity+. Returns a unique key for the stored entry.
     def store(entity, _data = {})

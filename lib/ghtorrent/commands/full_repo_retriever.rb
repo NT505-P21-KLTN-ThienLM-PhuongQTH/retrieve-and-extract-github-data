@@ -11,7 +11,7 @@ module GHTorrent
 
       def stages
         %w(ensure_commits ensure_topics ensure_languages ensure_pull_requests
-         ensure_issues ensure_watchers ensure_labels ensure_forks)
+          ensure_issues ensure_watchers ensure_labels ensure_forks ensure_workflows)
       end
 
       def settings
@@ -61,6 +61,8 @@ module GHTorrent
       def retrieve_full_repo(owner, repo)
         start_time = Time.now
         info "Start fetching: #{owner}/#{repo}"
+        info "Options only_stage: #{options[:only_stage].inspect}"
+        info "GHT stages: #{ght.stages.inspect}"
 
         user_entry = ght.transaction { ght.ensure_user(owner, false, false) }
         if user_entry.nil?
@@ -84,6 +86,7 @@ module GHTorrent
               ght.stages.each do |x|
                 stage_time = Time.now
                 stage = x
+                info "Starting stage: #{stage}"
                 ght.send(x, user, repo)
                 info "Stage: #{stage} completed, Repo: #{owner}/#{repo}, Time: #{Time.now.to_ms - stage_time.to_ms} ms"
               end
@@ -92,6 +95,7 @@ module GHTorrent
             else
               stage_time = Time.now
               stage = options[:only_stage]
+              info "Starting stage: #{stage}"
               ght.send(options[:only_stage], user, repo)
               info "Stage: #{stage} completed, Repo: #{owner}/#{repo}, Time: #{Time.now.to_ms - stage_time.to_ms} ms"
             end

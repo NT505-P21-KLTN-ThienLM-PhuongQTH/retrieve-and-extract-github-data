@@ -1,6 +1,5 @@
 require_relative './ghtorrent'
 
-
 # A version of the GHTorrent class that creates a transaction per processed
 # item
 class TransactedGHTorrent < GHTorrent::Mirror
@@ -73,7 +72,6 @@ class TransactedGHTorrent < GHTorrent::Mirror
     end
   end
 
-
   def ensure_watcher(owner, repo, watcher, date_added = nil)
     check_transaction do
       super(owner, repo, watcher, date_added)
@@ -105,6 +103,12 @@ class TransactedGHTorrent < GHTorrent::Mirror
   end
 
   def ensure_topics(owner, repo)
+    check_transaction do
+      super(owner, repo)
+    end
+  end
+
+  def ensure_workflows(owner, repo)
     check_transaction do
       super(owner, repo)
     end

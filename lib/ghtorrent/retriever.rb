@@ -1,5 +1,6 @@
 require 'uri'
 require 'cgi'
+require 'time'
 
 require_relative './api_client'
 require_relative './settings'
@@ -746,6 +747,114 @@ module GHTorrent
       else
         result
       end
+    end
+
+    def retrieve_workflows(owner, repo)
+      currepo = ensure_repo(owner, repo)
+      if currepo.nil?
+        warn "Could not find repo #{owner}/#{repo} for retrieving workflows"
+        return []
+      end
+    
+      info "Retrieving workflows for #{owner}/#{repo}"
+      workflows = []
+      existing_ids = []
+    
+      persister.find(:workflows, { 'owner' => owner, 'repo' => repo }).each do |existing|
+        existing_ids << existing[:github_id]
+      end
+    
+      response = api_request(ghurl("repos/#{owner}/#{repo}/actions/workflows"))
+      # debug "Raw API response: #{response.inspect}"
+      # debug "response['workflows']: #{response['workflows'].inspect}" # Thêm để debug
+      workflows_array = []
+      if response && response["workflows"].is_a?(Array)
+        workflows_array = response["workflows"]
+      else
+        # warn "Invalid or empty workflows response: #{response.inspect}"
+        warn "Invalid or empty workflows response!"
+      end
+      # debug "workflows_array: #{workflows_array.inspect}"
+    
+      workflows_array.each do |workflow|
+        workflow_id = workflow["id"].to_i
+        next if existing_ids.include?(workflow_id)
+    
+        workflows << workflow
+        existing_ids << workflow_id
+        persister.store(:workflows, {
+          github_id: workflow_id,
+          name: workflow["name"],
+          path: workflow["path"],
+          state: workflow["state"],
+          created_at: Time.parse(workflow["created_at"]),
+          updated_at: Time.parse(workflow["updated_at"]),
+          owner: owner,
+          repo: repo,
+          project_id: currepo[:id]
+        })
+        info "Added workflow #{owner}/#{repo} -> #{workflow_id}"
+        # retrieve_workflow_runs(owner, repo, workflow_id)
+      end
+    
+      info "API returned #{workflows.size} workflows for #{owner}/#{repo}"
+      workflows
+    end
+
+    def retrieve_workflow_runs(owner, repo, workflow_id)
+      currepo = ensure_repo(owner, repo)
+      if currepo.nil?
+        warn "Could not find repo #{owner}/#{repo} for retrieving workflow runs"
+        return []
+      end
+    
+      workflow_id = workflow_id.to_i
+      info "Retrieving workflow runs for workflow #{workflow_id} in #{owner}/#{repo}"
+      workflow_runs = []
+      existing_ids = []
+    
+      persister.find(:workflow_runs, { 'owner' => owner, 'repo' => repo, 'workflow_id' => workflow_id }).each do |existing|
+        existing_ids << existing[:github_id]
+      end
+    
+      response = api_request(ghurl("repos/#{owner}/#{repo}/actions/workflows/#{workflow_id}/runs"))
+      # debug "Raw API response for workflow runs: #{response.inspect}"
+      runs_array = []
+      if response && response["workflow_runs"].is_a?(Array)
+        runs_array = response["workflow_runs"]
+      else
+        # warn "Invalid or empty workflow runs response: #{response.inspect}"
+        warn "Invalid or empty workflow runs response!"
+      end
+      # debug "runs_array: #{runs_array.inspect}"
+    
+      runs_array.each do |run|
+        run_id = run["id"].to_i
+        next if existing_ids.include?(run_id)
+    
+        workflow_runs << run
+        existing_ids << run_id
+        persister.store(:workflow_runs, {
+          github_id: run_id,
+          workflow_id: workflow_id,
+          name: run["name"],
+          head_branch: run["head_branch"],
+          head_sha: run["head_sha"],
+          run_number: run["run_number"],
+          status: run["status"],
+          conclusion: run["conclusion"],
+          created_at: Time.parse(run["created_at"]),
+          run_started_at: Time.parse(run["run_started_at"]),
+          updated_at: Time.parse(run["updated_at"]),
+          owner: owner,
+          repo: repo,
+          project_id: currepo[:id]
+        })
+        info "Added workflow run #{run_id} for workflow #{workflow_id} in #{owner}/#{repo}"
+      end
+    
+      info "API returned #{workflow_runs.size} workflow runs for workflow #{workflow_id} in #{owner}/#{repo}"
+      workflow_runs
     end
 
     def ghurl(path, page = -1, per_page = 100)

@@ -58,7 +58,85 @@ module GHTorrent
 
     def stages
       %w(ensure_commits ensure_topics ensure_languages ensure_pull_requests
-         ensure_issues ensure_watchers ensure_labels ensure_forks)
+         ensure_issues ensure_watchers ensure_labels ensure_forks ensure_workflows)
+    end
+
+    def ensure_workflows(owner, repo)
+      currepo = ensure_repo(owner, repo)
+
+      if currepo.nil?
+        warn "Could not find repo #{owner}/#{repo} for retrieving workflows"
+        return
+      end
+
+      persister.del(:workflows, { owner: owner, repo: repo })
+      persister.del(:workflow_runs, { owner: owner, repo: repo })
+    
+      workflows = retrieve_workflows(owner, repo)
+      info "Found #{workflows.size} workflows for #{owner}/#{repo}"
+    
+      workflows.each do |workflow|
+        # debug "Workflow data: #{workflow.inspect}"
+        github_workflow_id = workflow['id'].to_i
+        unless workflow['name'] && workflow['path']
+          warn "Skipping workflow #{github_workflow_id} due to missing name or path"
+          next
+        end
+        workflow_rec = db[:workflows].first(:github_id => github_workflow_id)
+        unless workflow_rec
+          save do
+            db[:workflows].insert(
+              :github_id => github_workflow_id,
+              :name => workflow['name'],
+              :path => workflow['path'],
+              :state => workflow['state'],
+              :project_id => currepo[:id],
+              :created_at => date(workflow['created_at']),
+              :updated_at => date(workflow['updated_at'] || Time.now)
+            )
+            info "Added workflow #{github_workflow_id} for #{owner}/#{repo}"
+          end
+          workflow_rec = db[:workflows].first(:github_id => github_workflow_id)
+        end
+        workflow_id = workflow_rec[:id]
+        
+        workflow_runs = retrieve_workflow_runs(owner, repo, github_workflow_id)
+        info "Found #{workflow_runs.size} workflow runs for workflow #{github_workflow_id} in #{owner}/#{repo}"
+            
+        workflow_runs.each do |run|
+          # debug "Workflow run data: #{run.inspect}"
+          run_id = run['id'].to_i
+          if run['head_sha']
+            commit = ensure_commit(repo, run['head_sha'], owner, false)
+            if commit
+              debug "Found commit #{run['head_sha']} with id #{commit[:id]}"
+              save do
+                db[:workflow_runs].insert(
+                  :github_id => run_id,
+                  :workflow_id => workflow_id,
+                  :name => run['name'],
+                  :head_branch => run['head_branch'],
+                  :head_sha => run['head_sha'],
+                  :run_number => run['run_number'] || 0,
+                  :status => run['status'],
+                  :conclusion => run['conclusion'],
+                  :created_at => date(run['created_at']),
+                  :run_started_at => date(run['run_started_at']),
+                  :updated_at => date(run['updated_at'] || Time.now),
+                  :project_id => currepo[:id],
+                ) unless db[:workflow_runs].first(:github_id => run_id)
+                info "Added workflow run #{run_id} for workflow #{github_workflow_id} in #{owner}/#{repo}"
+              end
+            else
+              warn "Could not find commit #{run['head_sha']} for workflow run #{run_id} in #{owner}/#{repo}"
+            end
+          else
+            warn "No head_sha for workflow run #{run_id} in #{owner}/#{repo}"
+          end
+        end
+      end
+    
+      persister.find(:workflows, { 'owner' => owner, 'repo' => repo })
     end
 
     ##
