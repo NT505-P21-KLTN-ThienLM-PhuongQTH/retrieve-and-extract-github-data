@@ -260,9 +260,11 @@ usage:
                 .first
 
     if repo_entry.nil?
+      log "Cannot find repository #{owner}/#{repo} in projects table", 1, :error
       Optimist::die "Cannot find repository #{owner}/#{repo}"
     end
-
+    log "Found repository #{owner}/#{repo} with project_id=#{repo_entry[:id]}, language=#{repo_entry[:language]}", 1, :general
+    
     language = repo_entry[:language].downcase
 
     case language
@@ -290,21 +292,41 @@ usage:
     # Update the repo
     clone(owner, repo, true)
 
-    log 'Retrieving all commits'
-    walker = Rugged::Walker.new(git)
-    walker.sorting(Rugged::SORT_DATE)
-    walker.push(git.head.target)
-    self.all_commits = walker.map { |commit| commit.oid[0..10] }
-    log "#{all_commits.size} commits to process"
+    # log 'Retrieving all commits'
+    # walker = Rugged::Walker.new(git)
+    # walker.sorting(Rugged::SORT_DATE)
+    # walker.push(git.head.target)
+    # self.all_commits = walker.map { |commit| commit.oid[0..10] }
+    # log "#{all_commits.size} commits to process"
 
     # Get commits that close issues/pull requests
     # Index them by issue/pullreq id, as a sha might close multiple issues
     # see: https://help.github.com/articles/closing-issues-via-commit-messages
-    q = "SELECT c.sha FROM commits c, project_commits pc WHERE pc.project_id = ? AND pc.commit_id = c.id"
-    commits = db.fetch(q, repo_entry[:id]).all
+    # q = "SELECT c.sha FROM commits c, project_commits pc WHERE pc.project_id = ? AND pc.commit_id = c.id"
+    # commits = db.fetch(q, repo_entry[:id]).all
 
-    results = Parallel.map(commits, in_threads: THREADS) do |c|
-      process_commit(c[:sha], owner, repo, language, repo_entry[:id])
+    # results = Parallel.map(commits, in_threads: THREADS) do |c|
+    #   process_commit(c[:sha], owner, repo, language, repo_entry[:id])
+    # end.select { |x| !x.nil? }
+
+    log "Retrieving all workflow runs for #{owner}/#{repo}"
+    workflow_runs = db.fetch(<<-SQL).all
+      SELECT wr.*
+      FROM workflow_runs wr
+      INNER JOIN (
+        SELECT head_branch, head_sha, MAX(run_started_at) AS max_run_started_at
+        FROM workflow_runs
+        WHERE project_id = #{repo_entry[:id]}
+        GROUP BY head_branch, head_sha
+      ) latest ON wr.head_branch = latest.head_branch
+              AND wr.head_sha = latest.head_sha
+              AND wr.run_started_at = latest.max_run_started_at
+      WHERE wr.project_id = #{repo_entry[:id]}
+    SQL
+    log "#{workflow_runs.size} latest workflow runs to process"
+
+    results = Parallel.map(workflow_runs, in_threads: THREADS) do |run|
+      process_workflow_run(run, owner, repo, language, repo_entry[:id]) unless interrupted
     end.select { |x| !x.nil? }
 
     if results.empty?
@@ -364,160 +386,284 @@ usage:
   end
 
   # Process a single build
-  def process_commit(sha, owner, repo, lang, repo_id)
-    include_module = case lang.downcase
-                      when 'javascript' then JavaScriptData
-                      when 'typescript' then TypeScriptData
-                      when 'c++' then CppData
-                      when 'c#' then CSharpData
-                      when 'go' then GoData
-                      when 'java' then JavaData
-                      when 'python' then PythonData
-                      when 'ruby' then RubyData
-                      else JavaScriptData
-                      end
-    extend include_module
-    commit = mongo&.[]('commits')&.find({ 'sha' => sha }).limit(1).first
-    # return nil if commit.nil? || commit.empty?
-    log "Commit for SHA #{sha}: #{commit.inspect}"
+  # def process_commit(sha, owner, repo, lang, repo_id)
+  #   include_module = case lang.downcase
+  #                     when 'javascript' then JavaScriptData
+  #                     when 'typescript' then TypeScriptData
+  #                     when 'c++' then CppData
+  #                     when 'c#' then CSharpData
+  #                     when 'go' then GoData
+  #                     when 'java' then JavaData
+  #                     when 'python' then PythonData
+  #                     when 'ruby' then RubyData
+  #                     else JavaScriptData
+  #                     end
+  #   extend include_module
+  #   commit = mongo&.[]('commits')&.find({ 'sha' => sha }).limit(1).first
+  #   # return nil if commit.nil? || commit.empty?
+  #   log "Commit for SHA #{sha}: #{commit.inspect}"
 
+  #   if commit.nil? || commit.empty?
+  #     git_commit = git.lookup(sha)
+  #     commit = {
+  #       'commit' => {
+  #         'author' => { 'email' => git_commit.author[:email] },
+  #         'committer' => { 'date' => git_commit.author[:time].to_s }
+  #       },
+  #       'sha' => sha
+  #     }
+  #   end
+
+  #   # Count number of src/comment lines
+  #   sloc = src_lines(sha)
+  #   log "Computed sloc for #{sha}: #{sloc}", 1, :commit
+  #   months_back = 3
+
+  #   branches = git.branches.each_name(:local).select { |b| git.branches[b].target_id == sha }
+  #   branch = branches.first
+  #   unless branch
+  #     begin
+  #       branch = `git -C #{File.join('repos', owner, repo)} rev-parse --abbrev-ref HEAD`.strip
+  #     rescue
+  #       branch = 'unknown'
+  #     end
+  #   end
+  #   stats = calc_build_stats(owner, repo, [sha])
+  #   confounds = calculate_confounds(sha)
+  #   pr_info = pr_info_for_commit(sha, repo_id)
+
+  #   result = {
+  #       # [doc] The branch that was built
+  #       :git_branch => branch || commit.dig('commit', 'branch'),
+
+  #       # [doc] A list of all commits that were built for this build, up to but excluding the commit of the previous
+  #       # build, or up to and including a merge commit (in which case we cannot go further backward).
+  #       # The internal calculation starts with the parent for PR builds or the actual
+  #       # built commit for non-PR builds, traverse the parent commits up until a commit that is linked to a previous
+  #       # build is found (excluded, this is under `tr_prev_built_commit`) or until we cannot go any further because a
+  #       # branch point was reached. This is indicated in `git_prev_commit_resolution_status`. This list is what
+  #       # the `git_diff_*` fields are calculated upon.
+  #       :git_all_built_commits => sha,
+
+  #       # [doc] Number of `git_all_built_commits`.
+  #       :git_num_all_built_commits => 1,
+
+  #       # [doc] The commit that triggered the build.
+  #       :git_trigger_commit => sha,
+
+  #       # [doc] The emails of the committers of the commits in all `git_all_built_commits`.
+  #       :git_diff_committers => commit.dig('commit', 'author', 'email'),
+
+  #       # [doc] Number of lines of production code changed in all `git_all_built_commits`.
+  #       :git_diff_src_churn => stats[:lines_added].to_i + stats[:lines_deleted].to_i,
+
+  #       # [doc] Number of lines of test code changed in all `git_all_built_commits`.
+  #       :git_diff_test_churn => stats[:test_lines_added].to_i + stats[:test_lines_deleted].to_i,
+
+  #       # [doc] Project name on GitHub.
+  #       :gh_project_name => "#{owner}/#{repo}",
+
+  #       # [doc] Whether this build was triggered as part of a pull request on GitHub.
+  #       :gh_is_pr => pr_info[:is_pr],
+
+  #       # [doc] If the build is a pull request, the creation timestamp for this pull request, in UTC.
+  #       :gh_pr_created_at => pr_info[:created_at],
+
+  #       # [doc] Dominant repository language, according to GitHub.
+  #       :gh_lang => lang,
+
+  #       # [doc] Number of developers that committed directly or merged PRs from the moment the build was triggered and 3 months back.
+  #       :gh_team_size => main_team(owner, repo, sha, months_back).size,
+
+  #       # [doc] If git_commit is linked to a PR on GitHub, the number of discussion comments on that PR.
+  #       :gh_num_issue_comments => num_issue_comments(pr_info[:pr_id], pr_info[:created_at], commit['commit']['committer']['date']),
+        
+  #       # [doc] If gh_is_pr is true, the number of comments (code review) on this pull request on GitHub.
+  #       :gh_num_pr_comments => num_pr_comments(pr_info[:pr_id], pr_info[:created_at], commit['commit']['committer']['date']),
+
+  #       # [doc] The number of comments on `git_all_built_commits` on GitHub.
+  #       :gh_num_commit_comments => num_commit_comments(owner, repo, [sha]),
+
+  #       # [doc] Number of files added by all `git_all_built_commits`.
+  #       :gh_diff_files_added => stats[:files_added],
+
+  #       # [doc] Number of files deleted by all `git_all_built_commits`.
+  #       :gh_diff_files_deleted => stats[:files_removed],
+
+  #       # [doc] Number of files modified by all `git_all_built_commits`.
+  #       :gh_diff_files_modified => stats[:files_modified],
+
+  #       # [doc] Number of test cases added by `git_all_built_commits`.
+  #       :gh_diff_tests_added => test_diff_stats(sha, sha)[:tests_added],
+
+  #       # [doc] Number of test cases deleted by `git_all_built_commits`.
+  #       :gh_diff_tests_deleted => test_diff_stats(sha, sha)[:tests_deleted],
+
+  #       # [doc] Number of src files changed by all `git_all_built_commits`.
+  #       :gh_diff_src_files => stats[:src_files],
+
+  #       # [doc] Number of documentation files changed by all `git_all_built_commits`.
+  #       :gh_diff_doc_files => stats[:doc_files],
+
+  #       # [doc] Number of files which are neither source code nor documentation that changed by the commits that where built.
+  #       :gh_diff_other_files => stats[:other_files],
+
+  #       # [doc] Number of unique commits on the files touched in the commits (`git_all_built_commits`) that triggered the
+  #       # build from the moment the build was triggered and 3 months back. It is a metric of how active the part of
+  #       # the project is that these commits touched.
+  #       :gh_num_commits_on_files_touched => commits_on_files_touched(owner, repo, sha, months_back),
+
+  #       # [doc] Number of executable production source lines of code, in the entire repository.
+  #       :gh_sloc => sloc,
+
+  #       # [doc] Overall number of test code lines.
+  #       :gh_test_lines_per_kloc => test_lines(sha).to_f,
+
+  #       # [doc] Overall number of test cases.
+  #       :gh_test_cases_per_kloc => num_test_cases(sha).to_f,
+
+  #       # [doc] Overall number of assertions.
+  #       :gh_asserts_cases_per_kloc => num_assertions(sha).to_f,
+
+  #       # [doc] Whether this commit was authored by a core team member. A core team member is someone who has committed
+  #       # code at least once within the 3 months before this commit, either by directly committing it or by merging
+  #       # commits.
+  #       :gh_by_core_team_member => by_core_team_member?(commit, owner, repo),
+
+  #       # # [doc] Timestamp of the push that triggered the build (GitHub provided), in UTC.
+  #       # :gh_pushed_at => pushed_at(sha, commit),
+
+  #       # [doc] Age of the repository, from the latest commit to its first commit, in days
+  #       :gh_repo_age => confounds[:repo_age],
+
+  #       # [doc] Number of commits in the repository
+  #       :gh_repo_num_commits => confounds[:repo_num_commits]
+  #   }
+  #   log "Processed commit #{sha}: src_churn=#{result[:git_diff_src_churn]}, src_files=#{result[:gh_diff_src_files]}, sloc=#{result[:gh_sloc]}, num_commits=#{result[:gh_repo_num_commits]}", 1, :commit
+  #   result
+  # end
+
+  def process_workflow_run(run, owner, repo, lang, repo_id)
+    include_module = case lang.downcase
+                    when 'javascript' then JavaScriptData
+                    when 'typescript' then TypeScriptData
+                    when 'c++' then CppData
+                    when 'c#' then CSharpData
+                    when 'go' then GoData
+                    when 'java' then JavaData
+                    when 'python' then PythonData
+                    when 'ruby' then RubyData
+                    else JavaScriptData
+                    end
+    extend include_module
+    sha = run[:head_sha]
+    commit = db[:commits].where(:sha => sha).first
+    log "Commit for SHA #{sha}: #{commit.inspect}"
     if commit.nil? || commit.empty?
-      git_commit = git.lookup(sha)
-      commit = {
-        'commit' => {
-          'author' => { 'email' => git_commit.author[:email] },
-          'committer' => { 'date' => git_commit.author[:time].to_s }
-        },
-        'sha' => sha
-      }
+      begin
+        git_commit = git.lookup(sha)
+        author_email = git_commit.author[:email]
+        author_login = github_login(author_email)
+        commit = {
+          'commit' => {
+            'author' => { 'email' => author_email, 'id' => author_login },
+            'committer' => { 'date' => git_commit.author[:time].to_s }
+          },
+          :sha => sha,
+          :author_id => author_login,
+          :created_at => git_commit.author[:time].to_s
+        }
+      rescue
+        log "Cannot find commit #{sha} in repository, skipping run #{run[:github_id]}"
+        return nil
+      end
+    else
+      begin
+        git.lookup(sha) # Kiểm tra commit trong Git
+      rescue
+        log "Commit #{sha} in commits table but not in Git, skipping run #{run[:github_id]}"
+        return nil
+      end
     end
+    # Calculate build duration (in seconds)
+    run_started_at = run[:run_started_at]
+    updated_at = run[:updated_at]
+    build_duration = ((updated_at - run_started_at)).to_i # Convert to seconds
+    if build_duration < 0 || build_duration > 86_400 # 24 hours
+      log "Invalid build_duration #{build_duration}s for run #{run[:github_id]} (started: #{run_started_at}, updated: #{updated_at}), setting to 0"
+      build_duration = 0
+    end
+
+    # Map conclusion to build_failed
+    build_failed = case run[:conclusion]
+                  when 'success' then 'passed'
+                  when 'failure' then 'failed'
+                  else 'others'
+                  end
+
+    # Format gh_build_started_at
+    gh_build_started_at = run_started_at.strftime('%m/%d/%Y %H:%M:%S')
 
     # Count number of src/comment lines
     sloc = src_lines(sha)
     log "Computed sloc for #{sha}: #{sloc}", 1, :commit
     months_back = 3
+  
+    # Use head_branch from workflow run
+    branch = run[:head_branch] || 'unknown'
 
-    branches = git.branches.each_name(:local).select { |b| git.branches[b].target_id == sha }
-    branch = branches.first
-    unless branch
-      begin
-        branch = `git -C #{File.join('repos', owner, repo)} rev-parse --abbrev-ref HEAD`.strip
-      rescue
-        branch = 'unknown'
-      end
-    end
     stats = calc_build_stats(owner, repo, [sha])
     confounds = calculate_confounds(sha)
     pr_info = pr_info_for_commit(sha, repo_id)
 
     result = {
-        # [doc] The branch that was built
-        :git_branch => branch || commit.dig('commit', 'branch'),
-
-        # [doc] A list of all commits that were built for this build, up to but excluding the commit of the previous
-        # build, or up to and including a merge commit (in which case we cannot go further backward).
-        # The internal calculation starts with the parent for PR builds or the actual
-        # built commit for non-PR builds, traverse the parent commits up until a commit that is linked to a previous
-        # build is found (excluded, this is under `tr_prev_built_commit`) or until we cannot go any further because a
-        # branch point was reached. This is indicated in `git_prev_commit_resolution_status`. This list is what
-        # the `git_diff_*` fields are calculated upon.
-        :git_all_built_commits => sha,
-
-        # [doc] Number of `git_all_built_commits`.
-        :git_num_all_built_commits => 1,
-
-        # [doc] The commit that triggered the build.
-        :git_trigger_commit => sha,
-
-        # [doc] The emails of the committers of the commits in all `git_all_built_commits`.
-        :git_diff_committers => commit.dig('commit', 'author', 'email'),
-
-        # [doc] Number of lines of production code changed in all `git_all_built_commits`.
-        :git_diff_src_churn => stats[:lines_added].to_i + stats[:lines_deleted].to_i,
-
-        # [doc] Number of lines of test code changed in all `git_all_built_commits`.
-        :git_diff_test_churn => stats[:test_lines_added].to_i + stats[:test_lines_deleted].to_i,
-
-        # [doc] Project name on GitHub.
-        :gh_project_name => "#{owner}/#{repo}",
-
-        # [doc] Whether this build was triggered as part of a pull request on GitHub.
-        :gh_is_pr => pr_info[:is_pr],
-
-        # [doc] If the build is a pull request, the creation timestamp for this pull request, in UTC.
-        :gh_pr_created_at => pr_info[:created_at],
-
-        # [doc] Dominant repository language, according to GitHub.
-        :gh_lang => lang,
-
-        # [doc] Number of developers that committed directly or merged PRs from the moment the build was triggered and 3 months back.
-        :gh_team_size => main_team(owner, repo, sha, months_back).size,
-
-        # [doc] If git_commit is linked to a PR on GitHub, the number of discussion comments on that PR.
-        :gh_num_issue_comments => num_issue_comments(pr_info[:pr_id], pr_info[:created_at], commit['commit']['committer']['date']),
-        
-        # [doc] If gh_is_pr is true, the number of comments (code review) on this pull request on GitHub.
-        :gh_num_pr_comments => num_pr_comments(pr_info[:pr_id], pr_info[:created_at], commit['commit']['committer']['date']),
-
-        # [doc] The number of comments on `git_all_built_commits` on GitHub.
-        :gh_num_commit_comments => num_commit_comments(owner, repo, [sha]),
-
-        # [doc] Number of files added by all `git_all_built_commits`.
-        :gh_diff_files_added => stats[:files_added],
-
-        # [doc] Number of files deleted by all `git_all_built_commits`.
-        :gh_diff_files_deleted => stats[:files_removed],
-
-        # [doc] Number of files modified by all `git_all_built_commits`.
-        :gh_diff_files_modified => stats[:files_modified],
-
-        # [doc] Number of test cases added by `git_all_built_commits`.
-        :gh_diff_tests_added => test_diff_stats(sha, sha)[:tests_added],
-
-        # [doc] Number of test cases deleted by `git_all_built_commits`.
-        :gh_diff_tests_deleted => test_diff_stats(sha, sha)[:tests_deleted],
-
-        # [doc] Number of src files changed by all `git_all_built_commits`.
-        :gh_diff_src_files => stats[:src_files],
-
-        # [doc] Number of documentation files changed by all `git_all_built_commits`.
-        :gh_diff_doc_files => stats[:doc_files],
-
-        # [doc] Number of files which are neither source code nor documentation that changed by the commits that where built.
-        :gh_diff_other_files => stats[:other_files],
-
-        # [doc] Number of unique commits on the files touched in the commits (`git_all_built_commits`) that triggered the
-        # build from the moment the build was triggered and 3 months back. It is a metric of how active the part of
-        # the project is that these commits touched.
-        :gh_num_commits_on_files_touched => commits_on_files_touched(owner, repo, sha, months_back),
-
-        # [doc] Number of executable production source lines of code, in the entire repository.
-        :gh_sloc => sloc,
-
-        # [doc] Overall number of test code lines.
-        :gh_test_lines => test_lines(sha).to_f,
-
-        # [doc] Overall number of test cases.
-        :gh_test_cases => num_test_cases(sha).to_f,
-
-        # [doc] Overall number of assertions.
-        :gh_asserts => num_assertions(sha).to_f,
-
-        # [doc] Whether this commit was authored by a core team member. A core team member is someone who has committed
-        # code at least once within the 3 months before this commit, either by directly committing it or by merging
-        # commits.
-        :gh_by_core_team_member => by_core_team_member?(commit, owner, repo),
-
-        # [doc] Timestamp of the push that triggered the build (GitHub provided), in UTC.
-        :gh_pushed_at => pushed_at(sha, commit),
-
-        # [doc] Age of the repository, from the latest commit to its first commit, in days
-        :gh_repo_age => confounds[:repo_age],
-
-        # [doc] Number of commits in the repository
-        :gh_repo_num_commits => confounds[:repo_num_commits]
+      # Branch from workflow run
+      :git_branch => branch,
+  
+      # Commit that triggered the workflow run
+      :git_all_built_commits => sha,
+      :git_num_all_built_commits => 1,
+      :git_trigger_commit => sha,
+      # :git_diff_committers => commit['commit']&.dig('author', 'email') || commit[:email],
+      :git_diff_src_churn => stats[:lines_added].to_i + stats[:lines_deleted].to_i,
+      :git_diff_test_churn => stats[:test_lines_added].to_i + stats[:test_lines_deleted].to_i,
+  
+      # Project and PR info
+      :gh_project_name => "#{owner}/#{repo}",
+      :gh_is_pr => pr_info[:is_pr],
+      # :gh_pr_created_at => pr_info[:created_at],
+      :gh_lang => lang,
+      :gh_team_size => main_team(owner, repo, sha, months_back).size,
+      :gh_num_issue_comments => num_issue_comments(pr_info[:pr_id], pr_info[:created_at], commit[:created_at] || commit['commit']&.dig('committer', 'date')),
+      :gh_num_pr_comments => num_pr_comments(pr_info[:pr_id], pr_info[:created_at], commit[:created_at] || commit['commit']&.dig('committer', 'date')),
+      :gh_num_commit_comments => num_commit_comments(owner, repo, [sha]),
+  
+      # File stats
+      :gh_diff_files_added => stats[:files_added],
+      :gh_diff_files_deleted => stats[:files_removed],
+      :gh_diff_files_modified => stats[:files_modified],
+      :gh_diff_tests_added => test_diff_stats(sha, sha)[:tests_added],
+      :gh_diff_tests_deleted => test_diff_stats(sha, sha)[:tests_deleted],
+      :gh_diff_src_files => stats[:src_files],
+      :gh_diff_doc_files => stats[:doc_files],
+      :gh_diff_other_files => stats[:other_files],
+  
+      # Other metrics
+      :gh_num_commits_on_files_touched => commits_on_files_touched(owner, repo, sha, months_back),
+      :gh_sloc => sloc,
+      :gh_test_lines_per_kloc => test_lines(sha).to_f,
+      :gh_test_cases_per_kloc => num_test_cases(sha).to_f,
+      :gh_asserts_cases_per_kloc => num_assertions(sha).to_f,
+      :gh_by_core_team_member => by_core_team_member?(commit, owner, repo, months_back),
+      :gh_repo_age => confounds[:repo_age],
+      :gh_repo_num_commits => confounds[:repo_num_commits],
+  
+      # build info
+      :build_duration => build_duration,
+      :build_failed => build_failed,
+      :gh_build_started_at => gh_build_started_at
     }
-    log "Processed commit #{sha}: src_churn=#{result[:git_diff_src_churn]}, src_files=#{result[:gh_diff_src_files]}, sloc=#{result[:gh_sloc]}, num_commits=#{result[:gh_repo_num_commits]}", 1, :commit
+    log "Processed workflow run #{run[:github_id]}: build_duration=#{build_duration}s, build_failed=#{build_failed}, sloc=#{sloc}", 1, :workflow_run
     result
   end
 
@@ -570,21 +716,21 @@ usage:
     db.fetch(q, pr_id, from, to).first[:issue_comment_count]
   end
 
-  def pushed_at(sha, commit)
-    if mongo
-      event = mongo['events'].find(
-        {
-          'repo.name' => "#{owner}/#{repo}",
-          'type' => { '$in' => ['PushEvent', 'CreateEvent'] },
-          'payload.commits.sha' => sha
-        },
-        sort: { 'created_at' => 1 },
-        limit: 1
-      ).first
-      return event&.dig('created_at') if event
-    end
-    commit.dig('commit', 'committer', 'date') || git.lookup(sha).committer[:time].to_s
-  end
+  # def pushed_at(sha, commit)
+  #   if mongo
+  #     event = mongo['events'].find(
+  #       {
+  #         'repo.name' => "#{owner}/#{repo}",
+  #         'type' => { '$in' => ['PushEvent', 'CreateEvent'] },
+  #         'payload.commits.sha' => sha
+  #       },
+  #       sort: { 'created_at' => 1 },
+  #       limit: 1
+  #     ).first
+  #     return event&.dig('created_at') if event
+  #   end
+  #   commit.dig('commit', 'committer', 'date') || git.lookup(sha).committer[:time].to_s
+  # end
 
   def commit_fallback(sha)
     commit = github_commit(owner, repo, sha)
@@ -612,27 +758,55 @@ usage:
   # Number of integrators active during x months prior to pull request
   # creation.
   def main_team(owner, repo, sha, months_back)
-    commit_time = git.lookup(sha).time
+    commit_time = begin
+      git.lookup(sha).time
+    rescue
+      log "Commit #{sha} not found in Git, using commits.created_at", 1, :commit
+      commit = db[:commits].where(:sha => sha).first
+      commit ? commit[:created_at] : Time.now
+    end
     q = <<-QUERY
     SELECT DISTINCT u1.login
-    FROM commits c, project_commits pc, users u, projects p, users u1
-    WHERE pc.project_id = p.id
-      AND pc.commit_id = c.id
-      AND u.login = ?
-      AND p.name = ?
-      AND c.author_id = u1.id
-      AND p.owner_id = u.id
-      AND u1.fake IS FALSE
-      AND c.created_at BETWEEN DATE_SUB(?, INTERVAL #{months_back} MONTH) AND ?
+    FROM commits c
+    JOIN project_commits pc ON pc.commit_id = c.id
+    JOIN users u ON u.login = ?
+    JOIN projects p ON p.id = pc.project_id AND p.name = ? AND p.owner_id = u.id
+    JOIN users u1 ON c.author_id = u1.id
+    WHERE c.created_at BETWEEN DATE_SUB(?, INTERVAL #{months_back} MONTH) AND ?
+    AND u1.fake IS FALSE
     QUERY
-    db.fetch(q, owner, repo, commit_time, commit_time).map { |r| r[:login] }.uniq
+    logins = db.fetch(q, owner, repo, commit_time, commit_time).map { |r| r[:login] }.uniq
+    log "Fetched main team for #{owner}/#{repo} (commit #{sha}, #{months_back} months): #{logins.inspect}", 2, :commit
+    logins
   end
 
-  def by_core_team_member?(commit, owner, repo)
-    author = commit.dig('commit', 'author', 'email')
-    months_back = 3
-    main_team = main_team(owner, repo, commit['sha'], months_back)
-    github_login(author)&.in?(main_team)
+  def by_core_team_member?(commit, owner, repo, months_back)
+    # author = commit.dig('commit', 'author', 'email')
+    # months_back = 3
+    # main_team = main_team(owner, repo, commit['sha'], months_back)
+    # github_login(author)&.in?(main_team)
+
+    author_id = commit[:author_id] || commit['commit']&.dig('author', 'id')
+    author_login = github_login_by_id(author_id)
+    main_team = main_team(owner, repo, commit[:sha], months_back)
+    result = author_login.in?(main_team)
+    log "Core team member check for #{author_login}: #{result}", 2, :commit
+    result
+  end
+
+  def github_login_by_id(author_id)
+    return nil unless author_id
+  
+    q = <<-QUERY
+    SELECT login
+    FROM users
+    WHERE id = ?
+    AND fake IS FALSE
+    QUERY
+    result = db.fetch(q, author_id).first
+    login = result[:login] if result
+    log "Queried login for author_id #{author_id}: #{login || 'not found'}", 2, :commit
+    login
   end
 
   # Various statistics for the build. Returned as Hash with the following
@@ -724,45 +898,32 @@ usage:
   end
 
 
-  def test_diff_stats(from_sha, to_sha)
-    from = git.lookup(from_sha)
-    to = git.lookup(to_sha)
-
-    diff = to.diff(from)
-
-    added = deleted = 0
-    state = :none
-    diff.patch.lines.each do |line|
-      if line.start_with? '---'
-        file_path = line.strip.split(/---/)[1]
-        next if file_path.nil?
-
-        file_path = file_path[2..-1]
-        next if file_path.nil?
-
-        if test_file_filter.call(file_path)
-          state = :in_test
+  def test_diff_stats(start_sha, end_sha)
+    begin
+      start_commit = git.lookup(start_sha)
+      end_commit = git.lookup(end_sha)
+      diff = git.diff(start_commit, end_commit)
+      tests_added = 0
+      tests_deleted = 0
+      diff.each_patch do |patch|
+        file = patch.delta.new_file[:path]
+        next unless test_file?(file)
+        patch.each_hunk do |hunk|
+          hunk.each_line do |line|
+            case line.line_origin
+            when :addition
+              tests_added += 1 if test_line?(line.content)
+            when :deletion
+              tests_deleted += 1 if test_line?(line.content)
+            end
+          end
         end
       end
-
-      if line.start_with? '- ' and state == :in_test
-        if test_case_filter.call(line)
-          deleted += 1
-        end
-      end
-
-      if line.start_with? '+ ' and state == :in_test
-        if test_case_filter.call(line)
-          added += 1
-        end
-      end
-
-      if line.start_with? 'diff --'
-        state = :none
-      end
+      { tests_added: tests_added, tests_deleted: tests_deleted }
+    rescue Rugged::OdbError
+      log "Cannot find commit #{start_sha} or #{end_sha} in Git, returning zero test stats", 1, :commit
+      { tests_added: 0, tests_deleted: 0 }
     end
-
-    {:tests_added => added, :tests_deleted => deleted}
   end
 
   # Number of unique commits on the files changed by the build commits
