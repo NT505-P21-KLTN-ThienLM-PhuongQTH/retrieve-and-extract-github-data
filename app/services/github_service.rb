@@ -13,7 +13,7 @@ module GithubService
   end
 
   def self.retrieve_repository(owner, repo, token)
-    config_path = File.join(__dir__, '..', '..', 'config', 'config.yaml.erb')
+    config_path = File.join(__dir__, '..', '..', 'config.yaml.erb')
     cmd = "bundle exec ruby -Ilib bin/ght-retrieve-repo #{owner} #{repo} -c #{config_path} -t #{token}"
     stdout, stderr, status = Open3.capture3(cmd)
 
