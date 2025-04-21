@@ -14,13 +14,27 @@ module GithubService
 
   def self.retrieve_repository(owner, repo, token)
     config_path = File.join(__dir__, '..', '..', 'config.yaml.erb')
-    cmd = "bundle exec ruby -Ilib bin/ght-retrieve-repo #{owner} #{repo} -c #{config_path} -t #{token}"
-    stdout, stderr, status = Open3.capture3(cmd)
+    STDERR.puts "[GithubService] Retrieving repository #{owner}/#{repo}"
 
+    retrieve_cmd = "bundle exec ruby -Ilib bin/ght-retrieve-repo #{owner} #{repo} -c #{config_path} -t #{token}"
+    STDERR.puts "[GithubService] Executing: #{retrieve_cmd}"
+
+    stdout, stderr, status = Open3.capture3(retrieve_cmd)
+    unless status.success?
+      STDERR.puts "[GithubService] Failed to retrieve repository: #{stderr}"
+      return { status: :error, message: "Failed to retrieve repository: #{stderr}" }
+    end
+    STDERR.puts "[GithubService] ght-retrieve-repo stdout: #{stdout}"
+
+    extract_cmd = "bundle exec ruby -Ilib bin/build_data_extraction #{owner} #{repo}"
+    STDERR.puts "[GithubService] Executing: #{extract_cmd}"
+    stdout, stderr, status = Open3.capture3(extract_cmd)
     if status.success?
-      { status: :success, message: "Repository #{owner}/#{repo} retrieved and saved to database" }
+      STDERR.puts "[GithubService] ghtorrent_extractor stdout: #{stdout}"
+      return { status: :success, message: "Data extraction completed successfully: #{stdout}"}
     else
-      { status: :error, message: "Failed to retrieve repository: #{stderr}" }
+      STDERR.puts "[GithubService] Failed to extract data: #{stderr}"
+      return { status: :error, message: "Failed to extract data: #{stderr}" }
     end
   end
 end

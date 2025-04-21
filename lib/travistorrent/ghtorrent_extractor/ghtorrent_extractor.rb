@@ -223,6 +223,8 @@ usage:
     end
   end
 
+
+  
   # Main command code
   def go
     mongo
@@ -331,11 +333,42 @@ usage:
 
     if results.empty?
       log "No data extracted!"
+      return { status: :error, message: "No data extracted for #{owner}/#{repo}" }
     else
       # puts results.first.keys.map(&:to_s).join(',')
       # results.each { |r| puts r.values.join(',') }
-      File.write(@options[:output], array_of_hashes_to_csv(results.map { |r| r.transform_keys(&:to_s) }))
-      log "Results written to #{@options[:output]}"
+      # File.write(@options[:output], array_of_hashes_to_csv(results.map { |r| r.transform_keys(&:to_s) }))
+      # log "Results written to #{@options[:output]}"
+      inserted_count = 0
+      skipped_count = 0
+      results.each do |result|
+        # Check if the record already exists in MongoDB
+        existing = mongo[:ci_builds].find(
+          gh_project_name: result[:gh_project_name],
+          git_all_built_commits: result[:git_all_built_commits],
+          git_branch: result[:git_branch]
+        ).first
+
+        if existing
+          log "Skipping duplicate record for #{result[:gh_project_name]}, commit #{result[:git_all_built_commits]}, branch #{result[:git_branch]}", 1, :mongo
+          skipped_count += 1
+          next
+        end
+
+        begin
+          mongo[:ci_builds].insert_one(result)
+          inserted_count += 1
+        rescue Mongo::Error => e
+          log "Failed to insert record for #{result[:gh_project_name]}, commit #{result[:git_all_built_commits]}: #{e.message}", 1, :mongo
+        end
+      end
+
+      log "Saved #{inserted_count} records, skipped #{skipped_count} duplicates to MongoDB ghtorrent.ci_builds", 1, :mongo
+      if inserted_count > 0
+        { status: :success, message: "Extracted and saved #{inserted_count} records, skipped #{skipped_count} duplicates for #{owner}/#{repo}" }
+      else
+        { status: :success, message: "No new records saved, skipped #{skipped_count} duplicates for #{owner}/#{repo}" }
+      end
     end
 
   end
