@@ -791,7 +791,7 @@ module GHTorrent
           updated_at: Time.parse(workflow["updated_at"]),
           owner: owner,
           repo: repo,
-          project_id: currepo[:id]
+          html_url: workflow["html_url"],
         })
         info "Added workflow #{owner}/#{repo} -> #{workflow_id}"
         # retrieve_workflow_runs(owner, repo, workflow_id)
@@ -846,9 +846,23 @@ module GHTorrent
           created_at: Time.parse(run["created_at"]),
           run_started_at: Time.parse(run["run_started_at"]),
           updated_at: Time.parse(run["updated_at"]),
+          event: run["event"],
+          path: run["path"],
+          run_attempt: run["run_attempt"],
+          display_title: run["display_title"],
           owner: owner,
           repo: repo,
-          project_id: currepo[:id]
+          html_url: run["html_url"],
+          actor: {
+            login: run["actor"]["login"],
+            avatar_url: run["actor"]["avatar_url"],
+            html_url: run["actor"]["html_url"]
+          },
+          triggering_actor: {
+            login: run["triggering_actor"]["login"],
+            avatar_url: run["triggering_actor"]["avatar_url"],
+            html_url: run["triggering_actor"]["html_url"]
+          }
         })
         info "Added workflow run #{run_id} for workflow #{workflow_id} in #{owner}/#{repo}"
       end

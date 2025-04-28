@@ -95,7 +95,7 @@ get '/workflows' do
       workflow['created_at'] = workflow['created_at'].to_s
       workflow['updated_at'] = workflow['updated_at'].to_s
       # Chỉ giữ các trường cần thiết
-      workflow.slice!('_id', 'github_id', 'name', 'path', 'state', 'created_at', 'updated_at', 'project_id')
+      workflow.slice!('_id', 'github_id', 'name', 'path', 'state', 'created_at', 'updated_at', 'project_id', 'html_url')
     end
 
     workflows.to_json
@@ -126,9 +126,12 @@ get '/workflow_runs' do
       run['created_at'] = run['created_at'].to_s
       run['run_started_at'] = run['run_started_at'].to_s
       run['updated_at'] = run['updated_at'].to_s
+      run['run_attempt'] = run['run_attempt'].to_i
       # Chỉ giữ các trường cần thiết
       run.slice!('_id', 'github_id', 'workflow_id', 'name', 'head_branch', 'head_sha',
-                 'run_number', 'status', 'conclusion', 'created_at', 'run_started_at', 'updated_at')
+                 'run_number', 'status', 'conclusion', 'created_at', 'run_started_at', 'updated_at',
+                 'event', 'path', 'run_attempt', 'display_title', 'html_url', 'actor', 'triggering_actor',
+                 )
     end
 
     runs.to_json
