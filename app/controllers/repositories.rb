@@ -204,15 +204,21 @@ get '/ci_builds' do
   content_type :json
 
   begin
-    builds = client[:ci_builds].find.to_a
+    # Tạo query với điều kiện lọc theo git_branch và gh_project_name (nếu có)
+    query = {}
+    query[:git_branch] = params[:branch] if params[:branch]
+    query[:gh_project_name] = params[:project_name] if params[:project_name]
+
+    builds = client[:ci_builds].find(query).to_a
 
     builds.each do |build|
-      # Convert ObjectId to string
+      # Chuyển ObjectId thành string
       build['_id'] = build['_id'].to_s
       
+      # Chuyển các trường thời gian thành string
       build['gh_build_started_at'] = build['gh_build_started_at'].to_s if build['gh_build_started_at']
       
-      # Convert time fields to string
+      # Chuyển các trường số thành integer
       build['git_num_all_built_commits'] = build['git_num_all_built_commits'].to_i if build['git_num_all_built_commits']
       build['git_diff_src_churn'] = build['git_diff_src_churn'].to_i if build['git_diff_src_churn']
       build['git_diff_test_churn'] = build['git_diff_test_churn'].to_i if build['git_diff_test_churn']
@@ -236,10 +242,10 @@ get '/ci_builds' do
       build['gh_repo_num_commits'] = build['gh_repo_num_commits'].to_i if build['gh_repo_num_commits']
       build['build_duration'] = build['build_duration'].to_i if build['build_duration']
       
-      # Convert float fields to float
+      # Chuyển các trường số thực thành float
       build['gh_repo_age'] = build['gh_repo_age'].to_f if build['gh_repo_age']
       
-      # Convert boolean fields to true/false
+      # Chuyển các trường boolean thành true/false
       build['gh_is_pr'] = !!build['gh_is_pr'] if build.key?('gh_is_pr')
       build['gh_by_core_team_member'] = !!build['gh_by_core_team_member'] if build.key?('gh_by_core_team_member')
     end
@@ -251,30 +257,50 @@ get '/ci_builds' do
   end
 end
 
+# Endpoint để trả về n giá trị gần nhất trong ci_builds, có thể lọc theo nhánh và tên repo
 get '/ci_builds/recent' do
   content_type :json
 
   begin
-    limit = (params[:limit] || 10).to_i # Default to returning 10 values if no limit parameter is provided
+    limit = (params[:limit] || 10).to_i # Mặc định trả về 10 giá trị nếu không có tham số limit
     if limit <= 0
       status 400
       return { status: 'error', message: 'Limit must be a positive integer' }.to_json
     end
 
-    builds = client[:ci_builds]
-             .find
-             .sort({ gh_build_started_at: -1 }) # Sort by gh_build_started_at descending
-             .limit(limit)
-             .to_a
+    # Tạo query với điều kiện lọc theo git_branch và gh_project_name (nếu có)
+    query = {}
+    query[:git_branch] = params[:branch] if params[:branch]
+    query[:gh_project_name] = params[:project_name] if params[:project_name]
+
+    # Lấy tất cả document thỏa mãn query
+    builds = client[:ci_builds].find(query).to_a
+
+    # Sắp xếp trong Ruby theo gh_build_started_at (chuyển đổi thành DateTime trước)
+    builds.sort_by! do |build|
+      begin
+        # Chuyển đổi gh_build_started_at từ string sang DateTime để sắp xếp chính xác
+        DateTime.strptime(build['gh_build_started_at'], '%m/%d/%Y %H:%M:%S')
+      rescue ArgumentError
+        # Nếu có lỗi (giá trị không hợp lệ), đặt thời gian mặc định để tránh crash
+        DateTime.new(1970, 1, 1) # Thời gian rất cũ
+      end
+    end
+
+    # Đảo ngược để sắp xếp giảm dần (mới nhất trước)
+    builds.reverse!
+
+    # Lấy số lượng document theo limit
+    builds = builds.first(limit)
 
     builds.each do |build|
-      # Convert ObjectId to string
+      # Chuyển ObjectId thành string
       build['_id'] = build['_id'].to_s
       
-      # Convert time fields to string
+      # Chuyển các trường thời gian thành string
       build['gh_build_started_at'] = build['gh_build_started_at'].to_s if build['gh_build_started_at']
       
-      # Convert integer fields to integer
+      # Chuyển các trường số thành integer
       build['git_num_all_built_commits'] = build['git_num_all_built_commits'].to_i if build['git_num_all_built_commits']
       build['git_diff_src_churn'] = build['git_diff_src_churn'].to_i if build['git_diff_src_churn']
       build['git_diff_test_churn'] = build['git_diff_test_churn'].to_i if build['git_diff_test_churn']
@@ -298,10 +324,10 @@ get '/ci_builds/recent' do
       build['gh_repo_num_commits'] = build['gh_repo_num_commits'].to_i if build['gh_repo_num_commits']
       build['build_duration'] = build['build_duration'].to_i if build['build_duration']
       
-      # Convert float fields to float
+      # Chuyển các trường số thực thành float
       build['gh_repo_age'] = build['gh_repo_age'].to_f if build['gh_repo_age']
       
-      # Convert boolean fields to true/false
+      # Chuyển các trường boolean thành true/false
       build['gh_is_pr'] = !!build['gh_is_pr'] if build.key?('gh_is_pr')
       build['gh_by_core_team_member'] = !!build['gh_by_core_team_member'] if build.key?('gh_by_core_team_member')
     end
