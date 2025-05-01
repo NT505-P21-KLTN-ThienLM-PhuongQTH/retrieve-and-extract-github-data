@@ -199,3 +199,116 @@ get '/sync-data' do
     { status: 'error', message: "Unexpected error: #{e.message}" }.to_json
   end
 end
+
+get '/ci_builds' do
+  content_type :json
+
+  begin
+    builds = client[:ci_builds].find.to_a
+
+    builds.each do |build|
+      # Convert ObjectId to string
+      build['_id'] = build['_id'].to_s
+      
+      build['gh_build_started_at'] = build['gh_build_started_at'].to_s if build['gh_build_started_at']
+      
+      # Convert time fields to string
+      build['git_num_all_built_commits'] = build['git_num_all_built_commits'].to_i if build['git_num_all_built_commits']
+      build['git_diff_src_churn'] = build['git_diff_src_churn'].to_i if build['git_diff_src_churn']
+      build['git_diff_test_churn'] = build['git_diff_test_churn'].to_i if build['git_diff_test_churn']
+      build['gh_team_size'] = build['gh_team_size'].to_i if build['gh_team_size']
+      build['gh_num_issue_comments'] = build['gh_num_issue_comments'].to_i if build['gh_num_issue_comments']
+      build['gh_num_pr_comments'] = build['gh_num_pr_comments'].to_i if build['gh_num_pr_comments']
+      build['gh_num_commit_comments'] = build['gh_num_commit_comments'].to_i if build['gh_num_commit_comments']
+      build['gh_diff_files_added'] = build['gh_diff_files_added'].to_i if build['gh_diff_files_added']
+      build['gh_diff_files_deleted'] = build['gh_diff_files_deleted'].to_i if build['gh_diff_files_deleted']
+      build['gh_diff_files_modified'] = build['gh_diff_files_modified'].to_i if build['gh_diff_files_modified']
+      build['gh_diff_tests_added'] = build['gh_diff_tests_added'].to_i if build['gh_diff_tests_added']
+      build['gh_diff_tests_deleted'] = build['gh_diff_tests_deleted'].to_i if build['gh_diff_tests_deleted']
+      build['gh_diff_src_files'] = build['gh_diff_src_files'].to_i if build['gh_diff_src_files']
+      build['gh_diff_doc_files'] = build['gh_diff_doc_files'].to_i if build['gh_diff_doc_files']
+      build['gh_diff_other_files'] = build['gh_diff_other_files'].to_i if build['gh_diff_other_files']
+      build['gh_num_commits_on_files_touched'] = build['gh_num_commits_on_files_touched'].to_i if build['gh_num_commits_on_files_touched']
+      build['gh_sloc'] = build['gh_sloc'].to_i if build['gh_sloc']
+      build['gh_test_lines_per_kloc'] = build['gh_test_lines_per_kloc'].to_i if build['gh_test_lines_per_kloc']
+      build['gh_test_cases_per_kloc'] = build['gh_test_cases_per_kloc'].to_i if build['gh_test_cases_per_kloc']
+      build['gh_asserts_cases_per_kloc'] = build['gh_asserts_cases_per_kloc'].to_i if build['gh_asserts_cases_per_kloc']
+      build['gh_repo_num_commits'] = build['gh_repo_num_commits'].to_i if build['gh_repo_num_commits']
+      build['build_duration'] = build['build_duration'].to_i if build['build_duration']
+      
+      # Convert float fields to float
+      build['gh_repo_age'] = build['gh_repo_age'].to_f if build['gh_repo_age']
+      
+      # Convert boolean fields to true/false
+      build['gh_is_pr'] = !!build['gh_is_pr'] if build.key?('gh_is_pr')
+      build['gh_by_core_team_member'] = !!build['gh_by_core_team_member'] if build.key?('gh_by_core_team_member')
+    end
+
+    { status: 'success', ci_builds: builds }.to_json
+  rescue StandardError => e
+    status 500
+    { status: 'error', message: "Unexpected error: #{e.message}" }.to_json
+  end
+end
+
+get '/ci_builds/recent' do
+  content_type :json
+
+  begin
+    limit = (params[:limit] || 10).to_i # Default to returning 10 values if no limit parameter is provided
+    if limit <= 0
+      status 400
+      return { status: 'error', message: 'Limit must be a positive integer' }.to_json
+    end
+
+    builds = client[:ci_builds]
+             .find
+             .sort({ gh_build_started_at: -1 }) # Sort by gh_build_started_at descending
+             .limit(limit)
+             .to_a
+
+    builds.each do |build|
+      # Convert ObjectId to string
+      build['_id'] = build['_id'].to_s
+      
+      # Convert time fields to string
+      build['gh_build_started_at'] = build['gh_build_started_at'].to_s if build['gh_build_started_at']
+      
+      # Convert integer fields to integer
+      build['git_num_all_built_commits'] = build['git_num_all_built_commits'].to_i if build['git_num_all_built_commits']
+      build['git_diff_src_churn'] = build['git_diff_src_churn'].to_i if build['git_diff_src_churn']
+      build['git_diff_test_churn'] = build['git_diff_test_churn'].to_i if build['git_diff_test_churn']
+      build['gh_team_size'] = build['gh_team_size'].to_i if build['gh_team_size']
+      build['gh_num_issue_comments'] = build['gh_num_issue_comments'].to_i if build['gh_num_issue_comments']
+      build['gh_num_pr_comments'] = build['gh_num_pr_comments'].to_i if build['gh_num_pr_comments']
+      build['gh_num_commit_comments'] = build['gh_num_commit_comments'].to_i if build['gh_num_commit_comments']
+      build['gh_diff_files_added'] = build['gh_diff_files_added'].to_i if build['gh_diff_files_added']
+      build['gh_diff_files_deleted'] = build['gh_diff_files_deleted'].to_i if build['gh_diff_files_deleted']
+      build['gh_diff_files_modified'] = build['gh_diff_files_modified'].to_i if build['gh_diff_files_modified']
+      build['gh_diff_tests_added'] = build['gh_diff_tests_added'].to_i if build['gh_diff_tests_added']
+      build['gh_diff_tests_deleted'] = build['gh_diff_tests_deleted'].to_i if build['gh_diff_tests_deleted']
+      build['gh_diff_src_files'] = build['gh_diff_src_files'].to_i if build['gh_diff_src_files']
+      build['gh_diff_doc_files'] = build['gh_diff_doc_files'].to_i if build['gh_diff_doc_files']
+      build['gh_diff_other_files'] = build['gh_diff_other_files'].to_i if build['gh_diff_other_files']
+      build['gh_num_commits_on_files_touched'] = build['gh_num_commits_on_files_touched'].to_i if build['gh_num_commits_on_files_touched']
+      build['gh_sloc'] = build['gh_sloc'].to_i if build['gh_sloc']
+      build['gh_test_lines_per_kloc'] = build['gh_test_lines_per_kloc'].to_i if build['gh_test_lines_per_kloc']
+      build['gh_test_cases_per_kloc'] = build['gh_test_cases_per_kloc'].to_i if build['gh_test_cases_per_kloc']
+      build['gh_asserts_cases_per_kloc'] = build['gh_asserts_cases_per_kloc'].to_i if build['gh_asserts_cases_per_kloc']
+      build['gh_repo_num_commits'] = build['gh_repo_num_commits'].to_i if build['gh_repo_num_commits']
+      build['build_duration'] = build['build_duration'].to_i if build['build_duration']
+      
+      # Convert float fields to float
+      build['gh_repo_age'] = build['gh_repo_age'].to_f if build['gh_repo_age']
+      
+      # Convert boolean fields to true/false
+      build['gh_is_pr'] = !!build['gh_is_pr'] if build.key?('gh_is_pr')
+      build['gh_by_core_team_member'] = !!build['gh_by_core_team_member'] if build.key?('gh_by_core_team_member')
+    end
+
+    { status: 'success', ci_builds: builds }.to_json
+  rescue StandardError => e
+    status 500
+    { status: 'error', message: "Unexpected error: #{e.message}" }.to_json
+  end
+end
