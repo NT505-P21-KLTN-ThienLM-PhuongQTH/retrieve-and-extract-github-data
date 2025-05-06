@@ -127,11 +127,29 @@ get '/workflow_runs' do
       run['run_started_at'] = run['run_started_at'].to_s
       run['updated_at'] = run['updated_at'].to_s
       run['run_attempt'] = run['run_attempt'].to_i
+
+      if run['head_sha']
+        commit = client[:commits].find({ sha: run['head_sha']}).first
+        if commit
+          commit['_id'] = commit['_id'].to_s
+          commit['commit']['author']['date'] = commit['commit']['author']['date'].to_s
+          run['commit'] = commit.slice(
+            'sha',
+            'commit',
+            'html_url',
+            'stats'
+          )
+        else
+          run['commit'] = nil
+          puts "No commit found for head_sha: #{run['head_sha']} in repo #{owner}/#{repo}"
+        end
+      end
+
       # Chỉ giữ các trường cần thiết
       run.slice!('_id', 'github_id', 'workflow_id', 'name', 'head_branch', 'head_sha',
                  'run_number', 'status', 'conclusion', 'created_at', 'run_started_at', 'updated_at',
                  'event', 'path', 'run_attempt', 'display_title', 'html_url', 'actor', 'triggering_actor',
-                 )
+                 'commit')
     end
 
     runs.to_json
