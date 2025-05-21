@@ -26,5 +26,6 @@ gem "bson", "~> 4.15.0"
 gem "bunny", "~> 2.22.0"
 gem "httparty", "~> 0.22.0"
 gem "time_difference", "~> 0.5.0"
+gem 'sinatra-cors'
 
 gem "ghtorrent", path: "."

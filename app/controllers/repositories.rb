@@ -136,6 +136,7 @@ get '/workflow_runs' do
           run['commit'] = commit.slice(
             'sha',
             'commit',
+            'author',
             'html_url',
             'stats'
           )

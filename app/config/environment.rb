@@ -4,7 +4,7 @@ require 'dotenv/load'
 
 Bundler.require
 
-Dotenv.load(File.join(__dir__, '..', '..', 'config', '.env'))
+Dotenv.load(File.join(__dir__, '..', '..', '.env'))
 require_relative '../controllers/repositories'
 
 require_relative '../../lib/ghtorrent/api_client'
