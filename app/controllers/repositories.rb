@@ -7,7 +7,8 @@ require 'json'
 
 Dotenv.load(File.join(__dir__, '..', '..', '.env'))
 
-client = Mongo::Client.new(ENV['MONGODB_URI'])
+MONGODB_URI = "mongodb://#{ENV['MONGO_USERNAME']}:#{ENV['MONGO_PASSWORD']}@#{ENV['MONGO_HOST']}:#{ENV['MONGO_PORT']}/#{ENV['MONGO_DATABASE']}"
+client = Mongo::Client.new(MONGODB_URI)
 
 post '/retrieve' do
   content_type :json

@@ -1,0 +1,27 @@
+sql:
+  url: mysql2://<%= ENV['MYSQL_USERNAME'] %>:<%= ENV['MYSQL_PASSWORD'] %>@<%= ENV['MYSQL_HOST'] %>:<%= ENV['MYSQL_PORT'] %>/<%= ENV['MYSQL_DATABASE'] %>?encoding=utf8mb4
+mongo:
+  host: <%= ENV['MONGO_HOST'] %>
+  port: <%= ENV['MONGO_PORT'] %>
+  db: <%= ENV['MONGO_DATABASE'] %>
+  username: <%= ENV['MONGO_USERNAME'] %>
+  password: <%= ENV['MONGO_PASSWORD'] %>
+  ssl: false
+mirror:
+  urlbase: https://api.github.com/
+  persister: mongo
+  token: <%= ENV['GITHUB_TOKEN'] %>
+  req_limit: 10
+  user_agent: ghtorrent
+  fork_commits: fork_point
+  store_pull_request_commits: false
+  history_pages_back: 5
+logging:
+  uniq: ghtorrent
+  level: debug
+  file: log/ghtorrent.log
+geolocation:
+  service: osm
+  wait: 2
+  bing_key: ""
+  gmaps_key: ""

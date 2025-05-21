@@ -1,0 +1,13 @@
+version: '3.8'
+services:
+  ghtorrent_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghtorrent_app
+    container_name: ghtorrent_app
+    ports:
+      - "4567:4567"
+    env_file:
+      - .env
+    command: ["ruby", "app.rb"]
