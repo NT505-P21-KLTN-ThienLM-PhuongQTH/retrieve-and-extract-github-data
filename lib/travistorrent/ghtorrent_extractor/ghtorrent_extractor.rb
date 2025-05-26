@@ -341,29 +341,45 @@ usage:
       # log "Results written to #{@options[:output]}"
       inserted_count = 0
       skipped_count = 0
+      # results.each do |result|
+      #   # Check if the record already exists in MongoDB
+      #   existing = mongo[:ci_builds].find(
+      #     gh_project_name: result[:gh_project_name],
+      #     git_all_built_commits: result[:git_all_built_commits],
+      #     git_branch: result[:git_branch]
+      #   ).first
+
+      #   if existing
+      #     log "Skipping duplicate record for #{result[:gh_project_name]}, commit #{result[:git_all_built_commits]}, branch #{result[:git_branch]}", 1, :mongo
+      #     skipped_count += 1
+      #     next
+      #   end
+
+      #   begin
+      #     mongo[:ci_builds].insert_one(result)
+      #     inserted_count += 1
+      #   rescue Mongo::Error => e
+      #     log "Failed to insert record for #{result[:gh_project_name]}, commit #{result[:git_all_built_commits]}: #{e.message}", 1, :mongo
+      #   end
       results.each do |result|
-        # Check if the record already exists in MongoDB
-        existing = mongo[:ci_builds].find(
-          gh_project_name: result[:gh_project_name],
-          git_all_built_commits: result[:git_all_built_commits],
-          git_branch: result[:git_branch]
-        ).first
-
-        if existing
-          log "Skipping duplicate record for #{result[:gh_project_name]}, commit #{result[:git_all_built_commits]}, branch #{result[:git_branch]}", 1, :mongo
-          skipped_count += 1
-          next
-        end
-
         begin
-          mongo[:ci_builds].insert_one(result)
+          mongo[:ci_builds].update_one(
+            {
+              gh_project_name: result[:gh_project_name],
+              git_all_built_commits: result[:git_all_built_commits],
+              git_branch: result[:git_branch]
+            },
+            { "$set" => result },
+            upsert: true
+          )
           inserted_count += 1
         rescue Mongo::Error => e
-          log "Failed to insert record for #{result[:gh_project_name]}, commit #{result[:git_all_built_commits]}: #{e.message}", 1, :mongo
+          log "Failed to upsert record for #{result[:gh_project_name]}, commit #{result[:git_all_built_commits]}: #{e.message}", 1, :mongo
         end
       end
-
-      log "Saved #{inserted_count} records, skipped #{skipped_count} duplicates to MongoDB ghtorrent.ci_builds", 1, :mongo
+      
+      log "Upserted #{inserted_count} records to MongoDB ghtorrent.ci_builds", 1, :mongo
+      # log "Saved #{inserted_count} records, skipped #{skipped_count} duplicates to MongoDB ghtorrent.ci_builds", 1, :mongo
       if inserted_count > 0
         { status: :success, message: "Extracted and saved #{inserted_count} records, skipped #{skipped_count} duplicates for #{owner}/#{repo}" }
       else
@@ -592,6 +608,8 @@ usage:
     sha = run[:head_sha]
     commit = db[:commits].where(:sha => sha).first
     log "Commit for SHA #{sha}: #{commit.inspect}"
+    github_run_id = run[:github_id].to_i
+    log "GitHub run ID from DB: #{github_run_id}"
     if commit.nil? || commit.empty?
       begin
         git_commit = git.lookup(sha)
@@ -694,7 +712,8 @@ usage:
       # build info
       :build_duration => build_duration,
       :build_failed => build_failed,
-      :gh_build_started_at => gh_build_started_at
+      :gh_build_started_at => gh_build_started_at,
+      :github_run_id => github_run_id
     }
     log "Processed workflow run #{run[:github_id]}: build_duration=#{build_duration}s, build_failed=#{build_failed}, sloc=#{sloc}", 1, :workflow_run
     result
