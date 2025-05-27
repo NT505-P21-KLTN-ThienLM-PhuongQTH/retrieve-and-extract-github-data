@@ -4,6 +4,7 @@ require 'dotenv/load'
 require 'net/http'
 require 'uri'
 require 'json'
+require 'date'
 
 Dotenv.load(File.join(__dir__, '..', '..', '.env'))
 
@@ -348,6 +349,68 @@ get '/ci_builds/recent' do
       build['gh_repo_age'] = build['gh_repo_age'].to_f if build['gh_repo_age']
       
       # Chuyển các trường boolean thành true/false
+      build['gh_is_pr'] = !!build['gh_is_pr'] if build.key?('gh_is_pr')
+      build['gh_by_core_team_member'] = !!build['gh_by_core_team_member'] if build.key?('gh_by_core_team_member')
+    end
+
+    { status: 'success', ci_builds: builds }.to_json
+  rescue StandardError => e
+    status 500
+    { status: 'error', message: "Unexpected error: #{e.message}" }.to_json
+  end
+end
+
+get '/ci_builds_from_run' do
+  content_type :json
+
+  begin
+    # Tạo query với điều kiện lọc
+    query = {}
+    query[:git_branch] = params[:branch] if params[:branch]
+    query[:gh_project_name] = params[:project_name] if params[:project_name]
+
+    # Xử lý run_date
+    if params[:run_date]
+      begin
+        run_date = DateTime.parse(params[:run_date])
+        run_date_str = run_date.strftime('%m/%d/%Y %H:%M:%S')
+        query[:gh_build_started_at] = { '$lte' => run_date_str }
+      rescue ArgumentError
+        status 400
+        return { status: 'error', message: 'Invalid run_date format. Use ISO 8601 (e.g., 2025-05-26T20:00:00Z)' }.to_json
+      end
+    end
+
+    # Truy vấn ci_builds
+    builds = client[:ci_builds].find(query).to_a
+
+    # Chuyển đổi dữ liệu
+    builds.each do |build|
+      build['_id'] = build['_id'].to_s
+      build['gh_build_started_at'] = build['gh_build_started_at'].to_s if build['gh_build_started_at']
+      build['git_num_all_built_commits'] = build['git_num_all_built_commits'].to_i if build['git_num_all_built_commits']
+      build['git_diff_src_churn'] = build['git_diff_src_churn'].to_i if build['git_diff_src_churn']
+      build['git_diff_test_churn'] = build['git_diff_test_churn'].to_i if build['git_diff_test_churn']
+      build['gh_team_size'] = build['gh_team_size'].to_i if build['gh_team_size']
+      build['gh_num_issue_comments'] = build['gh_num_issue_comments'].to_i if build['gh_num_issue_comments']
+      build['gh_num_pr_comments'] = build['gh_num_pr_comments'].to_i if build['gh_num_pr_comments']
+      build['gh_num_commit_comments'] = build['gh_num_commit_comments'].to_i if build['gh_num_commit_comments']
+      build['gh_diff_files_added'] = build['gh_diff_files_added'].to_i if build['gh_diff_files_added']
+      build['gh_diff_files_deleted'] = build['gh_diff_files_deleted'].to_i if build['gh_diff_files_deleted']
+      build['gh_diff_files_modified'] = build['gh_diff_files_modified'].to_i if build['gh_diff_files_modified']
+      build['gh_diff_tests_added'] = build['gh_diff_tests_added'].to_i if build['gh_diff_tests_added']
+      build['gh_diff_tests_deleted'] = build['gh_diff_tests_deleted'].to_i if build['gh_diff_tests_deleted']
+      build['gh_diff_src_files'] = build['gh_diff_src_files'].to_i if build['gh_diff_src_files']
+      build['gh_diff_doc_files'] = build['gh_diff_doc_files'].to_i if build['gh_diff_doc_files']
+      build['gh_diff_other_files'] = build['gh_diff_other_files'].to_i if build['gh_diff_other_files']
+      build['gh_num_commits_on_files_touched'] = build['gh_num_commits_on_files_touched'].to_i if build['gh_num_commits_on_files_touched']
+      build['gh_sloc'] = build['gh_sloc'].to_i if build['gh_sloc']
+      build['gh_test_lines_per_kloc'] = build['gh_test_lines_per_kloc'].to_i if build['gh_test_lines_per_kloc']
+      build['gh_test_cases_per_kloc'] = build['gh_test_cases_per_kloc'].to_i if build['gh_test_cases_per_kloc']
+      build['gh_asserts_cases_per_kloc'] = build['gh_asserts_cases_per_kloc'].to_i if build['gh_asserts_cases_per_kloc']
+      build['gh_repo_num_commits'] = build['gh_repo_num_commits'].to_i if build['gh_repo_num_commits']
+      build['build_duration'] = build['build_duration'].to_i if build['build_duration']
+      build['gh_repo_age'] = build['gh_repo_age'].to_f if build['gh_repo_age']
       build['gh_is_pr'] = !!build['gh_is_pr'] if build.key?('gh_is_pr')
       build['gh_by_core_team_member'] = !!build['gh_by_core_team_member'] if build.key?('gh_by_core_team_member')
     end
