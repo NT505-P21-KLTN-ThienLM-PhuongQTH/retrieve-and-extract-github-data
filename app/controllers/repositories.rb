@@ -181,10 +181,12 @@ get '/sync-data' do
     repo_data = repo_data.to_h.slice(
       '_id', 'id', 'full_name', 'name', 'owner', 'private', 'html_url', 'homepage',
       'pushed_at', 'default_branch', 'language', 'stargazers_count', 'forks_count',
-      'watchers_count', 'open_issues_count', 'permissions'
+      'watchers_count', 'open_issues_count', 'permissions', 'created_at', 'updated_at'
     )
     repo_data['_id'] = repo_data['_id'].to_s
     repo_data['pushed_at'] = repo_data['pushed_at']&.to_s
+    repo_data['created_at'] = repo_data['created_at']&.to_s
+    repo_data['updated_at'] = repo_data['updated_at']&.to_s
 
     # Lấy workflows
     workflows = client[:workflows].find({ owner: owner, repo: repo }).to_a
