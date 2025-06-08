@@ -75,12 +75,17 @@ GEM
       base64 (>= 0.1.0)
       rack (~> 2.2, >= 2.2.4)
     rbtree (0.4.6)
+    redis (4.6.0)
     ruby2_keywords (0.0.5)
     rugged (1.7.2)
     securerandom (0.4.1)
     sequel (5.76.0)
       bigdecimal
     set (1.1.2)
+    sidekiq (6.5.12)
+      connection_pool (>= 2.2.5, < 3)
+      rack (~> 2.0)
+      redis (>= 4.5.0, < 5)
     sinatra (3.2.0)
       mustermann (~> 3.0)
       rack (~> 2.2, >= 2.2.4)
@@ -132,8 +137,11 @@ DEPENDENCIES
   net-http (~> 0.4.1)
   optimist (~> 3.1.0)
   parallel (~> 1.26.3)
+  redis (~> 4.6.0)
   rugged (~> 1.7.2)
+  securerandom (~> 0.4.1)
   sequel (~> 5.76.0)
+  sidekiq (~> 6.5.0)
   sinatra
   sinatra-contrib
   sinatra-cors

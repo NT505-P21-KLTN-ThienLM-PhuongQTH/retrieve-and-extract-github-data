@@ -27,5 +27,8 @@ gem "bunny", "~> 2.22.0"
 gem "httparty", "~> 0.22.0"
 gem "time_difference", "~> 0.5.0"
 gem 'sinatra-cors'
+gem 'sidekiq', '~> 6.5.0'
+gem 'redis', '~> 4.6.0'
+gem 'securerandom', '~> 0.4.1'
 
 gem "ghtorrent", path: "."

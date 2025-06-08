@@ -5,23 +5,26 @@ require 'net/http'
 require 'uri'
 require 'json'
 require 'date'
+require 'securerandom'
 
 Dotenv.load(File.join(__dir__, '..', '..', '.env'))
 
 MONGODB_URI = "mongodb://#{ENV['MONGO_USERNAME']}:#{ENV['MONGO_PASSWORD']}@#{ENV['MONGO_HOST']}:#{ENV['MONGO_PORT']}/#{ENV['MONGO_DATABASE']}"
 client = Mongo::Client.new(MONGODB_URI)
 
+REDIS = Redis.new(host: ENV['REDIS_HOST'], port: ENV['REDIS_PORT'], password: ENV['REDIS_PASSWORD'])
+
 post '/retrieve' do
   content_type :json
-
   begin
     request_body = JSON.parse(request.body.read)
     url = request_body['url']
     token = request_body['token']
+    request_id = request_body['request_id'] || SecureRandom.uuid
 
     unless url && token
       status 400
-      return { status: 'error', message: 'Missing URL or token' }.to_json
+      return { status: 'error', message: 'Missing url or token' }.to_json
     end
 
     owner, repo = GithubService.extract_owner_repo(url)
@@ -30,17 +33,76 @@ post '/retrieve' do
       return { status: 'error', message: 'Invalid GitHub URL' }.to_json
     end
 
-    result = GithubService.retrieve_repository(owner, repo, token)
-    status(result[:status] == :success ? 200 : 500)
-    result.to_json
+    client[:retrieve_requests].insert_one(
+      request_id: request_id,
+      owner: owner,
+      repo: repo,
+      status: 'queued',
+      created_at: Time.now
+    )
+
+    require_relative '../workers/retrieve_repo_worker'
+    RetrieveRepoWorker.perform_async(owner, repo, token, request_id)
+
+    status 202
+    { status: 'accepted', request_id: request_id }.to_json
   rescue JSON::ParserError
     status 400
-    { status: 'error', message: 'Invalid JSON body' }.to_json
+    return { status: 'error', message: 'Invalid JSON body' }.to_json
   rescue StandardError => e
     status 500
-    { status: 'error', message: "Unexpected error: #{e.message}" }.to_json
+    return { status: 'error', message: "Unexpected error: #{e.message}" }.to_json
   end
 end
+
+get '/retrieve_status/:request_id' do
+  content_type :json
+  request_id = params[:request_id]
+  request = client[:retrieve_requests].find(request_id: request_id).first
+  if request
+    status 200
+    {
+      status: request[:status],
+      data: request[:data],
+      error: request[:error],
+      updated_at: request[:updated_at]
+    }.to_json
+  else
+    status 404
+    return { status: 'error', message: 'Request not found' }.to_json
+  end
+end
+
+# post '/retrieve' do
+#   content_type :json
+
+#   begin
+#     request_body = JSON.parse(request.body.read)
+#     url = request_body['url']
+#     token = request_body['token']
+
+#     unless url && token
+#       status 400
+#       return { status: 'error', message: 'Missing URL or token' }.to_json
+#     end
+
+#     owner, repo = GithubService.extract_owner_repo(url)
+#     unless owner && repo
+#       status 400
+#       return { status: 'error', message: 'Invalid GitHub URL' }.to_json
+#     end
+
+#     result = GithubService.retrieve_repository(owner, repo, token)
+#     status(result[:status] == :success ? 200 : 500)
+#     result.to_json
+#   rescue JSON::ParserError
+#     status 400
+#     { status: 'error', message: 'Invalid JSON body' }.to_json
+#   rescue StandardError => e
+#     status 500
+#     { status: 'error', message: "Unexpected error: #{e.message}" }.to_json
+#   end
+# end
 
 get '/repos/:owner/:repo' do
   content_type :json

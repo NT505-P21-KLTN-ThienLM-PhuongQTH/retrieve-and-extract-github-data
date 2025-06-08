@@ -6,6 +6,8 @@ RUN apt-get update && apt-get install -y \
   libssl-dev \
   pkg-config \
   git \
+  supervisor \
+  redis-tools \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -16,6 +18,9 @@ RUN bundle install
 
 COPY . .
 
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
 EXPOSE 4567
 
-CMD ["ruby", "app.rb"]
+# CMD ["ruby", "app.rb"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
