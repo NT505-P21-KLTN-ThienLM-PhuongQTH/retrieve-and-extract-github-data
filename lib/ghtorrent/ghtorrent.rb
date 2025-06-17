@@ -61,6 +61,7 @@ module GHTorrent
       #    ensure_issues ensure_watchers ensure_labels ensure_forks ensure_workflows)
       %w(ensure_commits ensure_topics ensure_languages ensure_pull_requests
          ensure_issues ensure_labels ensure_workflows)
+      # %w(ensure_workflows)
     end
 
     def ensure_workflows(owner, repo)

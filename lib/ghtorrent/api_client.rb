@@ -129,14 +129,20 @@ module GHTorrent
         if json.nil?
           []
         else
-          r = JSON.parse(json)
+          begin
+            r = JSON.parse(json)
 
-          # Add the etag to the response only for individual entities
-          if result.meta['etag'] and r.class != Array
-            r['etag'] = fmt_etag(result.meta['etag'])
+            # Thêm etag nếu là object
+            if result.meta['etag'] && r.class != Array
+              r['etag'] = fmt_etag(result.meta['etag'])
+            end
+
+            r
+          rescue JSON::ParserError => e
+            warn "[WARNING] Skipping invalid JSON: #{e.message}"
+            warn "[URL] #{result.meta['uri'] rescue 'unknown'}"
+            return []  # hoặc nil, tuỳ logic tiếp theo
           end
-
-          r
         end
       end
     end
@@ -251,26 +257,41 @@ module GHTorrent
       media_type = 'application/json' unless media_type.size > 0
 
       headers = {
-          'User-Agent' => @user_agent,
-          'Accept' => media_type
+        'User-Agent' => @user_agent,
+        'Accept' => media_type
       }
 
-      headers = headers.merge({'Authorization' => "token #{@token}"}) if auth_method(@token) == :token
-      headers = headers.merge({'If-None-Match' => etag}) if etag
+      headers = headers.merge({ 'Authorization' => "token #{@token}" }) if auth_method(@token) == :token
+      headers = headers.merge({ 'If-None-Match' => etag }) if etag
 
-      # Only way to encode square brackets in standard Ruby
+      # Encode square brackets if needed
       if url =~ %r{\[|\]}
         protocol, host, path = url.split(%r{/+}, 3)
         path = path.gsub('[', '%5B').gsub(']', '%5D')
         url = "#{protocol}//#{host}/#{path}"
       end
 
-      result = URI.open(url, **headers.transform_keys(&:downcase))
-      @remaining = result.meta['x-ratelimit-remaining'].to_i
-      @reset = result.meta['x-ratelimit-reset'].to_i
-      result
-    rescue OpenURI::HTTPError => e
-      raise e
+      attempt = 0
+      begin
+        attempt += 1
+        result = URI.open(
+          url,
+          **headers.transform_keys(&:downcase),
+          open_timeout: 20,  # tăng timeout kết nối
+          read_timeout: 20   # tăng timeout đọc phản hồi
+        )
+
+        @remaining = result.meta['x-ratelimit-remaining'].to_i
+        @reset = result.meta['x-ratelimit-reset'].to_i
+        result
+      rescue OpenURI::HTTPError => e
+        raise e
+      rescue Net::OpenTimeout, Net::ReadTimeout, EOFError, OpenSSL::SSL::SSLError => e
+        warn "[WARN] Timeout on #{url}: #{e.class} - #{e.message}"
+        retry if attempt < 3
+        warn "[SKIP] Failed after 3 attempts: #{url}"
+        nil
+      end
     end
 
     # Attach to a specific IP address if the machine has multiple

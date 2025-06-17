@@ -132,7 +132,13 @@ usage:
       host = config['mongo']['host']
       port = config['mongo']['port']
       db = config['mongo']['db']
+
+      raise "Missing MongoDB host" if host.nil? || host.strip.empty?
+      raise "Missing MongoDB port" if port.nil? || port.to_s.strip.empty?
+      raise "Missing MongoDB db name" if db.nil? || db.strip.empty?
+
       constring = uname ? "mongodb://#{uname}:#{passwd}@#{host}:#{port}/#{db}" : "mongodb://#{host}:#{port}/#{db}"
+      puts "[DEBUG] Connecting to MongoDB with URI: #{constring}"
       client = Mongo::Client.new(constring)
       client.database.collection_names # Test kết nối
       log "Connected to MongoDB successfully"
@@ -267,7 +273,7 @@ usage:
     end
     log "Found repository #{owner}/#{repo} with project_id=#{repo_entry[:id]}, language=#{repo_entry[:language]}", 1, :general
     
-    language = repo_entry[:language].downcase
+    language = repo_entry[:language]&.downcase || "unknown"
 
     case language
     when /javascript/i

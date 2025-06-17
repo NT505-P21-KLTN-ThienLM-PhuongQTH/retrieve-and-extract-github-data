@@ -44,28 +44,26 @@ module GHTorrent
       url = ghurl("legacy/user/email/#{CGI.escape(email)}")
       byemail = api_request(url)
 
-      if byemail.nil? or byemail.empty?
+      if byemail.nil? || !byemail.is_a?(Hash) || byemail.empty? || !byemail['user'].is_a?(Hash)
         # Only search by name if name param looks like a proper name
-        byname = if !name.nil? and name.split(/ /).size > 1
-                   url = ghurl("legacy/user/search/#{CGI.escape(name)}")
-                   api_request(url)
-                 end
+        byname = if !name.nil? && name.split(/ /).size > 1
+                  url = ghurl("legacy/user/search/#{CGI.escape(name)}")
+                  api_request(url)
+                end
 
-        if byname.nil? or byname['users'].nil? or byname['users'].empty?
+        if byname.nil? || !byname.is_a?(Hash) || byname['users'].nil? || byname['users'].empty?
           nil
         else
           user = byname['users'].find do |u|
-            u['name'] == name and
-              !u['login'].nil? and
+            u['name'] == name &&
+              !u['login'].nil? &&
               !retrieve_user_byusername(u['login']).nil?
           end
 
           if user.nil?
             warn "Could not find user #{email}"
             nil
-          elsif !email.nil? and user['email'] == email
-            # Make extra sure that if we got an email it matches that
-            # of the retrieved user
+          elsif !email.nil? && user['email'] == email
             user
           else
             warn "Could not find user #{email}"
@@ -76,7 +74,7 @@ module GHTorrent
         u = byemail['user']
         persister.store(:users, u)
         what = user_type(u['type'])
-        info "Added user #{what} #{user}"
+        info "Added user #{what} #{u}"
         u
       else
         info "Added user #{byemail['user']['login']} retrieved by email #{email}"
@@ -859,9 +857,9 @@ module GHTorrent
             html_url: run["actor"]["html_url"]
           },
           triggering_actor: {
-            login: run["triggering_actor"]["login"],
-            avatar_url: run["triggering_actor"]["avatar_url"],
-            html_url: run["triggering_actor"]["html_url"]
+            login: run["triggering_actor"]&.[]("login"),
+            avatar_url: run["triggering_actor"]&.[]("avatar_url"),
+            html_url: run["triggering_actor"]&.[]("html_url")
           }
         })
         info "Added workflow run #{run_id} for workflow #{workflow_id} in #{owner}/#{repo}"
