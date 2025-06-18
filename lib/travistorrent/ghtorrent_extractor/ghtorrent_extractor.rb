@@ -137,7 +137,7 @@ usage:
       raise "Missing MongoDB port" if port.nil? || port.to_s.strip.empty?
       raise "Missing MongoDB db name" if db.nil? || db.strip.empty?
 
-      constring = uname ? "mongodb://#{uname}:#{passwd}@#{host}:#{port}/#{db}" : "mongodb://#{host}:#{port}/#{db}"
+      constring = uname ? "mongodb://#{uname}:#{passwd}@#{host}:#{port}/#{db}?authSource=admin" : "mongodb://#{host}:#{port}/#{db}"
       puts "[DEBUG] Connecting to MongoDB with URI: #{constring}"
       client = Mongo::Client.new(constring)
       client.database.collection_names # Test kết nối
