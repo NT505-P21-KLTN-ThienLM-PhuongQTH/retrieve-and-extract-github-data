@@ -9,7 +9,7 @@ require 'securerandom'
 
 Dotenv.load(File.join(__dir__, '..', '..', '.env'))
 
-MONGODB_URI = "mongodb://#{ENV['MONGO_USERNAME']}:#{ENV['MONGO_PASSWORD']}@#{ENV['MONGO_HOST']}:#{ENV['MONGO_PORT']}/#{ENV['MONGO_DATABASE']}"
+MONGODB_URI = "mongodb://#{ENV['MONGO_USERNAME']}:#{ENV['MONGO_PASSWORD']}@#{ENV['MONGO_HOST']}:#{ENV['MONGO_PORT']}/#{ENV['MONGO_DATABASE']}?authSource=admin"
 client = Mongo::Client.new(MONGODB_URI)
 
 REDIS = Redis.new(host: ENV['REDIS_HOST'], port: ENV['REDIS_PORT'], password: ENV['REDIS_PASSWORD'])

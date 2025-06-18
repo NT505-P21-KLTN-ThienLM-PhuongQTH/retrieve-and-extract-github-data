@@ -8,7 +8,7 @@ require_relative '../services/github_service'
 
 Dotenv.load(File.join(__dir__, '..', '..', '.env'))
 
-MONGODB_URI = "mongodb://#{ENV['MONGO_USERNAME']}:#{ENV['MONGO_PASSWORD']}@#{ENV['MONGO_HOST']}:#{ENV['MONGO_PORT']}/#{ENV['MONGO_DATABASE']}"
+MONGODB_URI = "mongodb://#{ENV['MONGO_USERNAME']}:#{ENV['MONGO_PASSWORD']}@#{ENV['MONGO_HOST']}:#{ENV['MONGO_PORT']}/#{ENV['MONGO_DATABASE']}?authSource=admin"
 
 redis_options = {
   host: ENV['REDIS_HOST'] || 'localhost',
