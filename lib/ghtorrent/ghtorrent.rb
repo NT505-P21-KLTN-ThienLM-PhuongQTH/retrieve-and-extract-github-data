@@ -179,14 +179,14 @@ module GHTorrent
                        num_commits: -1, fork_all: false)
 
       currepo = ensure_repo(user, repo)
-      unless currepo[:forked_from].nil? or fork_all
-        r = retrieve_repo(user, repo)
-        return if r.nil?
-        parent_owner = r['parent']['owner']['login']
-        parent_repo  = r['parent']['name']
-        commits = ensure_fork_commits(user, repo, parent_owner, parent_repo)
-        return commits
-      end
+      # unless currepo[:forked_from].nil? or fork_all
+      #   r = retrieve_repo(user, repo)
+      #   return if r.nil?
+      #   parent_owner = r['parent']['owner']['login']
+      #   parent_repo  = r['parent']['name']
+      #   commits = ensure_fork_commits(user, repo, parent_owner, parent_repo)
+      #   return commits
+      # end
 
       num_retrieved = 0
       commits = ['foo'] # Dummy entry for simplifying the loop below
@@ -697,27 +697,27 @@ module GHTorrent
                    :created_at => date(r['created_at']),
                    :updated_at => date(Time.now))
 
-      unless r['parent'].nil?
-        parent_owner = r['parent']['owner']['login']
-        parent_repo = r['parent']['name']
+      # unless r['parent'].nil?
+      #   parent_owner = r['parent']['owner']['login']
+      #   parent_repo = r['parent']['name']
 
-        parent = ensure_repo(parent_owner, parent_repo)
+      #   parent = ensure_repo(parent_owner, parent_repo)
 
-        if parent.nil?
-          warn "Could not find repo #{parent_owner}/#{parent_repo}, parent of: #{user}/#{repo}"
-          repos.filter(:owner_id => curuser[:id], :name => repo).update(:forked_from => -1)
-        else
-          repos.filter(:owner_id => curuser[:id], :name => repo).update(:forked_from => parent[:id])
-          info "Repo #{user}/#{repo} is a fork of #{parent_owner}/#{parent_repo}"
+      #   if parent.nil?
+      #     warn "Could not find repo #{parent_owner}/#{parent_repo}, parent of: #{user}/#{repo}"
+      #     repos.filter(:owner_id => curuser[:id], :name => repo).update(:forked_from => -1)
+      #   else
+      #     repos.filter(:owner_id => curuser[:id], :name => repo).update(:forked_from => parent[:id])
+      #     info "Repo #{user}/#{repo} is a fork of #{parent_owner}/#{parent_repo}"
 
-          fork_commit = ensure_fork_point(user, repo)
-          if fork_commit.nil?
-            warn "Could not find fork point for #{user}/#{repo}, fork of #{parent_owner}/#{parent_repo}"
-          else
-            debug "#{user}/#{repo} was forked at #{fork_commit[:sha]} from #{parent_owner}/#{parent_repo}"
-          end
-        end
-      end
+      #     fork_commit = ensure_fork_point(user, repo)
+      #     if fork_commit.nil?
+      #       warn "Could not find fork point for #{user}/#{repo}, fork of #{parent_owner}/#{parent_repo}"
+      #     else
+      #       debug "#{user}/#{repo} was forked at #{fork_commit[:sha]} from #{parent_owner}/#{parent_repo}"
+      #     end
+      #   end
+      # end
 
       if recursive and not ensure_repo_recursive(user, repo)
         warn "Could not retrieve #{user}/#{repo} recursively"

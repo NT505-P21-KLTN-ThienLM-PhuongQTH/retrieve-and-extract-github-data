@@ -11,5 +11,5 @@ services:
     env_file:
       - .env
     command: ["supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
-    volumes:
-      - ./repos:/app/repos
+#    volumes:
+#      - ./repos:/app/repos
