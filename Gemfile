@@ -3,7 +3,7 @@ source "https://rubygems.org"
 
 gem "sinatra"
 gem "sinatra-contrib"
-gem "thin", "~> 1.8.2"
+gem "thin", "~> 2.0.0"
 gem "sequel", "~> 5.76.0"
 gem "rugged", "~> 1.7.2"
 gem "github-linguist", "~> 7.28.0"
