@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 source "https://rubygems.org"
 
-gem "sinatra"
-gem "sinatra-contrib"
-gem "thin", "~> 1.8.2"
+gem "sinatra", ">= 4.0.0"
+gem "sinatra-contrib", ">= 4.0.0"
+gem "thin", "~> 2.0.0"
 gem "sequel", "~> 5.76.0"
 gem "rugged", "~> 1.7.2"
 gem "github-linguist", "~> 7.28.0"
@@ -14,8 +14,8 @@ gem "dotenv", "~> 3.1.2"
 gem "etc", "~> 1.4.3"
 gem "fileutils", "~> 1.7.2"
 gem "digest", "~> 3.1.1"
-gem "net-http", "~> 0.4.1" # Thay net
-gem "uri", "~> 0.13.0"
+gem "net-http", "~> 0.5.0" # Thay net
+gem "uri", "~> 0.13.3"
 gem "logger", "~> 1.6.0"
 gem "cgi", "~> 0.4.1"
 gem "yaml", "~> 0.3.0"
@@ -27,7 +27,7 @@ gem "bunny", "~> 2.22.0"
 gem "httparty", "~> 0.22.0"
 gem "time_difference", "~> 0.5.0"
 gem 'sinatra-cors'
-gem 'sidekiq', '~> 6.5.0'
+gem 'sidekiq', '~> 7.0.0'
 gem 'redis', '~> 4.6.0'
 gem 'securerandom', '~> 0.4.1'
 
