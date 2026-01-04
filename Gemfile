@@ -24,7 +24,7 @@ gem "mysql2", "~> 0.5.6"
 gem "mongo", "~> 2.21.0"
 gem "bson", "~> 4.15.0"
 gem "bunny", "~> 2.22.0"
-gem "httparty", "~> 0.22.0"
+gem "httparty", "~> 0.24.0"
 gem "time_difference", "~> 0.5.0"
 gem 'sinatra-cors'
 gem 'sidekiq', '~> 6.5.0'
